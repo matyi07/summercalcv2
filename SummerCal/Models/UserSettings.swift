@@ -22,6 +22,8 @@ final class UserSettings {
     var nextDayFreePreviewEnabled: Bool
     var monthlyIncomeGoal: Double?
     var currencyCode: String
+    var weatherKitJWT: String?
+    var googlePlacesAPIKey: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -45,6 +47,8 @@ final class UserSettings {
         nextDayFreePreviewEnabled: Bool = false,
         monthlyIncomeGoal: Double? = nil,
         currencyCode: String = "USD",
+        weatherKitJWT: String? = nil,
+        googlePlacesAPIKey: String? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -67,6 +71,8 @@ final class UserSettings {
         self.nextDayFreePreviewEnabled = nextDayFreePreviewEnabled
         self.monthlyIncomeGoal = monthlyIncomeGoal
         self.currencyCode = currencyCode
+        self.weatherKitJWT = weatherKitJWT
+        self.googlePlacesAPIKey = googlePlacesAPIKey
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

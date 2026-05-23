@@ -67,7 +67,7 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
     var currentLocationName: String?
 
     private let locationManager = CLLocationManager()
-    private var currentCoordinate: CLLocationCoordinate2D?
+    var currentCoordinate: CLLocationCoordinate2D?
 
     override init() {
         super.init()

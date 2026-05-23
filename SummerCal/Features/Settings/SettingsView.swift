@@ -7,7 +7,7 @@ struct SettingsView: View {
     @State private var showResetConfirmation: Bool = false
     @State private var showNotificationSettings: Bool = false
 
-    private let currencies = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN", "BRL", "KRW"]
+    private let currencies = ["USD", "EUR", "GBP", "HUF", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN", "BRL", "KRW"]
 
     var body: some View {
         Form {

@@ -14,11 +14,11 @@ struct AISettingsView: View {
     ]
 
     private let models: [String: [String]] = [
-        "openAI": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
-        "anthropic": ["claude-3-opus", "claude-3-sonnet", "claude-3-haiku", "claude-3.5-sonnet"],
-        "google": ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.0-pro"],
-        "mistral": ["mistral-large", "mistral-medium", "mistral-small"],
-        "deepSeek": ["deepseek-chat", "deepseek-coder"],
+        "openAI": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo", "o1", "o1-mini", "o3-mini"],
+        "anthropic": ["claude-3.5-sonnet-latest", "claude-3.5-haiku-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"],
+        "google": ["gemini-2.0-flash", "gemini-2.0-pro", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.0-pro"],
+        "deepSeek": ["deepseek-chat", "deepseek-coder", "deepseek-reasoner"],
+        "mistral": ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest", "open-mistral-nemo", "open-mixtral-8x22b"],
         "custom": []
     ]
 

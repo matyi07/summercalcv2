@@ -87,6 +87,69 @@ enum PromptBuilder {
         return prompt
     }
     
+    static func buildSmartSuggestionPrompt(
+        date: String,
+        freeWindows: [DateInterval],
+        todaysEvents: [CalendarEvent],
+        weatherSummary: String,
+        nearbyPlaces: [PlaceCandidate],
+        preferences: [String]
+    ) -> String {
+        var prompt = "You are a helpful personal assistant. Based on the following context, suggest 3-5 specific, realistic activities for the user's free time today.\n\n"
+        prompt += "Date: \(date)\n"
+        
+        if todaysEvents.isEmpty {
+            prompt += "Events: None scheduled.\n"
+        } else {
+            prompt += "Scheduled events:\n"
+            for event in todaysEvents {
+                prompt += "  - \"\(event.title)\" from \(DateUtils.formattedTime(event.startDate)) to \(DateUtils.formattedTime(event.endDate))"
+                if let location = event.location { prompt += " at \(location)" }
+                prompt += "\n"
+            }
+        }
+        
+        if freeWindows.isEmpty {
+            prompt += "Free time: No significant free windows available.\n"
+        } else {
+            let totalFree = freeWindows.reduce(0.0) { $0 + $1.duration } / 3600.0
+            prompt += "Free time windows (\(String(format: "%.1f", totalFree)) hours total):\n"
+            for window in freeWindows {
+                prompt += "  - \(DateUtils.formattedTime(window.start)) to \(DateUtils.formattedTime(window.end))\n"
+            }
+        }
+        
+        if !weatherSummary.isEmpty {
+            prompt += "Weather: \(weatherSummary)\n"
+        }
+        
+        if !nearbyPlaces.isEmpty {
+            prompt += "Nearby places:\n"
+            for place in nearbyPlaces.prefix(5) {
+                var line = "  - \(place.name) (\(place.category ?? "place"))"
+                if let rating = place.rating { line += " [\(String(format: "%.1f", rating)) stars]" }
+                if let openNow = place.openNow { line += openNow ? " [OPEN]" : " [CLOSED]" }
+                prompt += line + "\n"
+            }
+        }
+        
+        if !preferences.isEmpty {
+            prompt += "User preferences: \(preferences.joined(separator: ", "))\n"
+        }
+        
+        prompt += "\nReturn your response as a JSON array of activity suggestions. Each suggestion must have these fields:\n"
+        prompt += "- title: string (short, catchy activity name)\n"
+        prompt += "- summary: string (1-2 sentence description)\n"
+        prompt += "- category: string (one of: outdoor, indoor, fitness, social, food, culture, errand, leisure)\n"
+        prompt += "- estimatedDurationMinutes: number (realistic duration in minutes)\n"
+        prompt += "- estimatedCostLevel: number (0=free, 1=cheap, 2=moderate, 3=expensive)\n"
+        prompt += "- placeName: string or null (name of a nearby place if applicable)\n"
+        prompt += "- weatherReason: string or null (brief explanation of why this activity suits today's weather)\n"
+        prompt += "\nRespond ONLY with the JSON array, no other text. Example: [{\"title\": \"Morning Park Walk\", ...}]"
+        
+        return prompt
+    }
+    
     static func buildNoteSummaryPrompt(notes: [EventNote]) -> String {
         var prompt = "Summarize these event notes into 1-3 short bullet points suitable for a notification preview:\n\n"
         for note in notes.prefix(5) {

@@ -13,6 +13,8 @@ final class PlaceCandidate {
     var rating: Double?
     var placeId: String?
     var distanceMeters: Double?
+    var photoReference: String?
+    var vicinity: String?
     var createdAt: Date
 
     init(
@@ -26,6 +28,8 @@ final class PlaceCandidate {
         rating: Double? = nil,
         placeId: String? = nil,
         distanceMeters: Double? = nil,
+        photoReference: String? = nil,
+        vicinity: String? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -38,6 +42,8 @@ final class PlaceCandidate {
         self.rating = rating
         self.placeId = placeId
         self.distanceMeters = distanceMeters
+        self.photoReference = photoReference
+        self.vicinity = vicinity
         self.createdAt = createdAt
     }
 }

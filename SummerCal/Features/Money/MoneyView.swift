@@ -349,7 +349,8 @@ struct MoneyView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         viewModel.currencyCode = settingsCurrency
-                        viewModel.monthlyGoal = Double(settingsGoalText) ?? 0
+                        let cleaned = settingsGoalText.replacingOccurrences(of: ",", with: ".")
+                        viewModel.monthlyGoal = Double(cleaned) ?? 0
                         viewModel.saveGoal(modelContext: modelContext)
                         showSettings = false
                     }

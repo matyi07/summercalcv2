@@ -42,7 +42,9 @@ final class MapKitPlacesProvider: PlacesProvider {
         let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         return response.mapItems.map { item in
             let distance = item.placemark.location.map { $0.distance(from: origin) } ?? 0
-            let address = [item.placemark.thoroughfare, item.placemark.locality, item.placemark.administrativeArea, item.placemark.postalCode, item.placemark.country].compactMap { $0 }.joined(separator: ", ")
+            let address = [item.placemark.thoroughfare, item.placemark.locality,
+                           item.placemark.administrativeArea, item.placemark.postalCode,
+                           item.placemark.country].compactMap { $0 }.joined(separator: ", ")
             return PlaceCandidate(
                 name: item.name ?? "Unknown",
                 category: item.pointOfInterestCategory?.rawValue ?? "place",
@@ -67,7 +69,9 @@ final class MapKitPlacesProvider: PlacesProvider {
             throw NSError(domain: "Places", code: 404, userInfo: [NSLocalizedDescriptionKey: "Place not found"])
         }
 
-        let address = [item.placemark.thoroughfare, item.placemark.locality, item.placemark.administrativeArea, item.placemark.postalCode, item.placemark.country].compactMap { $0 }.joined(separator: ", ")
+        let address = [item.placemark.thoroughfare, item.placemark.locality,
+                       item.placemark.administrativeArea, item.placemark.postalCode,
+                       item.placemark.country].compactMap { $0 }.joined(separator: ", ")
 
         return PlaceDetails(
             placeId: placeId,
@@ -100,10 +104,11 @@ final class GooglePlacesProvider: PlacesProvider {
 
         let (data, _) = try await URLSession.shared.data(from: components.url!)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let results = json?["results"] as? [[String: Any]] ?? []
+        let rawResults = json?["results"] as? [[String: Any]] ?? []
 
         let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        return results.compactMap { place -> PlaceCandidate? in
+
+        let candidates: [PlaceCandidate] = rawResults.compactMap { place in
             guard let name = place["name"] as? String,
                   let geometry = place["geometry"] as? [String: Any],
                   let location = geometry["location"] as? [String: Any],
@@ -114,29 +119,35 @@ final class GooglePlacesProvider: PlacesProvider {
             let openingHours = place["opening_hours"] as? [String: Any]
             let openNow = openingHours?["open_now"] as? Bool
             let rating = place["rating"] as? Double
-            let vicinity = place["vicinity"] as? String ?? ""
+            let vicinity = place["vicinity"] as? String
             let types = place["types"] as? [String] ?? []
-
+            let category = types.first
+            let photoReference = (place["photos"] as? [[String: Any]])?.first?["photo_reference"] as? String
             let placeLoc = CLLocation(latitude: lat, longitude: lng)
 
             return PlaceCandidate(
                 name: name,
-                category: types.first ?? "place",
+                category: category,
                 address: vicinity,
                 latitude: lat,
                 longitude: lng,
                 openNow: openNow,
                 rating: rating,
                 placeId: placeId,
-                distanceMeters: origin.distance(from: placeLoc)
+                distanceMeters: origin.distance(from: placeLoc),
+                photoReference: photoReference,
+                vicinity: vicinity
             )
         }
+
+        return candidates.sorted { ($0.distanceMeters ?? .infinity) < ($1.distanceMeters ?? .infinity) }
     }
 
     func details(placeId: String) async throws -> PlaceDetails {
         var components = URLComponents(string: "\(baseURL)/details/json")!
         components.queryItems = [
             URLQueryItem(name: "place_id", value: placeId),
+            URLQueryItem(name: "fields", value: "name,formatted_address,formatted_phone_number,website,opening_hours,rating,photos"),
             URLQueryItem(name: "key", value: apiKey)
         ]
 
@@ -163,47 +174,69 @@ final class GooglePlacesProvider: PlacesProvider {
 }
 
 final class PlacesService: ObservableObject {
-    let mapKitProvider: PlacesProvider
-    let googlePlacesProvider: PlacesProvider?
+    private let googleAPIKey: String
+    private let mapKitProvider: MapKitPlacesProvider
+    private var googleProvider: GooglePlacesProvider?
+    private var preferGoogle: Bool
+
     @Published var isLoading = false
     @Published var results: [PlaceCandidate] = []
     @Published var error: String?
 
     init(googleApiKey: String? = nil) {
+        let key = googleApiKey ?? "AIzaSyCchq9xvIlpqqkE2bdTUV8kc3ZadXZPVus"
+        self.googleAPIKey = key
         self.mapKitProvider = MapKitPlacesProvider()
-        if let key = googleApiKey, !key.isEmpty {
-            self.googlePlacesProvider = GooglePlacesProvider(apiKey: key)
-        } else {
-            self.googlePlacesProvider = nil
+        self.preferGoogle = !key.isEmpty
+        if !key.isEmpty {
+            self.googleProvider = GooglePlacesProvider(apiKey: key)
         }
     }
 
     func searchNearby(query: String, coordinate: Coordinate, radiusMeters: Double = 3000) async {
         await MainActor.run { isLoading = true; error = nil }
         do {
-            let provider: PlacesProvider = googlePlacesProvider ?? mapKitProvider
-            let candidates = try await provider.searchNearby(query: query, coordinate: coordinate, radiusMeters: radiusMeters)
+            let candidates = try await resolveProvider().searchNearby(query: query, coordinate: coordinate, radiusMeters: radiusMeters)
             await MainActor.run { results = candidates; isLoading = false }
         } catch {
-            await MainActor.run { self.error = error.localizedDescription; isLoading = false }
+            if preferGoogle {
+                do {
+                    let fallback = try await mapKitProvider.searchNearby(query: query, coordinate: coordinate, radiusMeters: radiusMeters)
+                    await MainActor.run { results = fallback; isLoading = false }
+                    return
+                } catch {
+                    await MainActor.run { self.error = error.localizedDescription; isLoading = false }
+                }
+            } else {
+                await MainActor.run { self.error = error.localizedDescription; isLoading = false }
+            }
         }
     }
 
+    func searchNearbyWithGoogle(query: String, coordinate: Coordinate, radiusMeters: Double = 5000) async throws -> [PlaceCandidate] {
+        guard let google = googleProvider else {
+            throw NSError(domain: "PlacesService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Google API key not configured"])
+        }
+        return try await google.searchNearby(query: query, coordinate: coordinate, radiusMeters: radiusMeters)
+    }
+
     func openNowCandidates(for query: String, location: Coordinate) async throws -> [PlaceCandidate] {
-        let provider: PlacesProvider = googlePlacesProvider ?? mapKitProvider
-        let candidates = try await provider.searchNearby(query: query, coordinate: location, radiusMeters: 3000)
-        if googlePlacesProvider != nil {
+        let candidates = try await resolveProvider().searchNearby(query: query, coordinate: location, radiusMeters: 3000)
+        if googleProvider != nil {
             return candidates.filter { $0.openNow != false }
         }
         return candidates
     }
 
     func placeDetails(placeId: String) async throws -> PlaceDetails {
-        let provider: PlacesProvider = googlePlacesProvider ?? mapKitProvider
-        return try await provider.details(placeId: placeId)
+        try await resolveProvider().details(placeId: placeId)
     }
 
     func popularCategories() -> [String] {
         ["cafe", "gym", "restaurant", "park", "museum", "shopping", "errand"]
+    }
+
+    private func resolveProvider() -> PlacesProvider {
+        googleProvider ?? mapKitProvider
     }
 }

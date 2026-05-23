@@ -84,6 +84,8 @@ struct WeatherView: View {
 
                     currentWeatherCard
 
+                    weatherDetailsGrid
+
                     hourlyForecastSection
 
                     dailyForecastSection
@@ -123,7 +125,7 @@ struct WeatherView: View {
     private var currentWeatherCard: some View {
         Group {
             if let weather = viewModel.currentWeather {
-                VStack(spacing: 12) {
+                VStack(spacing: 8) {
                     if let name = viewModel.locationName {
                         HStack(spacing: 4) {
                             Image(systemName: "location.fill")
@@ -135,7 +137,7 @@ struct WeatherView: View {
                         }
                     }
 
-                    Image(systemName: viewModel.weatherIcon(for: weatherCodeFor(weather)))
+                    Image(systemName: viewModel.weatherIcon(for: weather.condition))
                         .font(.system(size: 56))
                         .foregroundStyle(.orange.gradient)
                         .symbolRenderingMode(.hierarchical)
@@ -145,45 +147,19 @@ struct WeatherView: View {
                         .fontWeight(.semibold)
 
                     Text(viewModel.formattedTemperature(weather.temperatureCelsius))
-                        .font(.system(size: 52, weight: .thin))
+                        .font(.system(size: 56, weight: .thin))
 
-                    HStack(spacing: 20) {
-                        VStack(spacing: 2) {
-                            Label(
-                                viewModel.formattedTemperature(weather.temperatureCelsius),
-                                systemImage: "thermometer.medium"
-                            )
-                            .font(.caption2)
+                    if let feelsLike = weather.feelsLikeCelsius {
+                        Text("Feels like \(viewModel.formattedTemperature(feelsLike))")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            Text("Feels like")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-
-                        VStack(spacing: 2) {
-                            Label(
-                                viewModel.formattedWind(weather.windSpeedKph),
-                                systemImage: "wind"
-                            )
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            Text("Wind")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-
-                        VStack(spacing: 2) {
-                            Label(
-                                "\(Int(weather.precipitationChance))%",
-                                systemImage: "umbrella.percent"
-                            )
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            Text("Precip")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
                     }
+
+                    Text(weather.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 2)
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity)
@@ -204,23 +180,87 @@ struct WeatherView: View {
         }
     }
 
+    private var weatherDetailsGrid: some View {
+        Group {
+            if let weather = viewModel.currentWeather {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    detailCell(
+                        icon: "humidity.fill",
+                        label: "Humidity",
+                        value: viewModel.formattedHumidity(weather.humidity),
+                        color: .blue
+                    )
+                    detailCell(
+                        icon: "wind",
+                        label: "Wind",
+                        value: viewModel.formattedWind(weather.windSpeedKph),
+                        color: .teal
+                    )
+                    detailCell(
+                        icon: "sun.max.fill",
+                        label: "UV Index",
+                        value: viewModel.uvIndexLabel(weather.uvIndex),
+                        color: .orange
+                    )
+                    detailCell(
+                        icon: "eye.fill",
+                        label: "Visibility",
+                        value: viewModel.formattedVisibility(weather.visibility),
+                        color: .indigo
+                    )
+                    detailCell(
+                        icon: "gauge.with.dots.needle.33percent",
+                        label: "Pressure",
+                        value: viewModel.formattedPressure(weather.pressure),
+                        color: .gray
+                    )
+                    detailCell(
+                        icon: "umbrella.percent.fill",
+                        label: "Precipitation",
+                        value: "\(Int(weather.precipitationChance * 100))%",
+                        color: .blue
+                    )
+                }
+                .padding()
+                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16))
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    private func detailCell(icon: String, label: String, value: String, color: Color) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(color)
+            Text(value)
+                .font(.caption)
+                .fontWeight(.semibold)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+    }
+
     private var hourlyForecastSection: some View {
         Group {
             if !viewModel.hourlyForecast.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Hourly")
+                    Text("Hourly Forecast")
                         .font(.headline)
                         .padding(.horizontal)
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
-                            ForEach(viewModel.hourlyForecast.prefix(24)) { snapshot in
+                            ForEach(Array(viewModel.hourlyForecast.prefix(24).enumerated()), id: \.element.id) { _, snapshot in
                                 VStack(spacing: 6) {
                                     Text(hourLabel(for: snapshot.forecastDate))
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
 
-                                    Image(systemName: viewModel.weatherIcon(for: weatherCodeFor(snapshot)))
+                                    Image(systemName: viewModel.weatherIcon(for: snapshot.condition))
                                         .font(.title3)
                                         .symbolRenderingMode(.hierarchical)
                                         .foregroundStyle(.orange.gradient)
@@ -230,7 +270,7 @@ struct WeatherView: View {
                                         .fontWeight(.medium)
 
                                     if snapshot.precipitationChance > 0 {
-                                        Text("\(Int(snapshot.precipitationChance))%")
+                                        Text("\(Int(snapshot.precipitationChance * 100))%")
                                             .font(.caption2)
                                             .foregroundStyle(.blue)
                                     } else {
@@ -266,14 +306,14 @@ struct WeatherView: View {
                                     .font(.subheadline)
                                     .frame(width: 50, alignment: .leading)
 
-                                Image(systemName: viewModel.weatherIcon(for: weatherCodeFor(day)))
+                                Image(systemName: viewModel.weatherIcon(for: day.condition))
                                     .font(.title3)
                                     .symbolRenderingMode(.hierarchical)
                                     .foregroundStyle(.orange.gradient)
                                     .frame(width: 30)
 
                                 if day.precipitationChance > 0 {
-                                    Text("\(Int(day.precipitationChance))%")
+                                    Text("\(Int(day.precipitationChance * 100))%")
                                         .font(.caption)
                                         .foregroundStyle(.blue)
                                         .frame(width: 36, alignment: .trailing)
@@ -282,10 +322,21 @@ struct WeatherView: View {
                                         .frame(width: 36)
                                 }
 
-                                Text(day.summary)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+                                if let high = day.highTemp, let low = day.lowTemp {
+                                    HStack(spacing: 4) {
+                                        Text("H:\(String(format: "%.0f", high))°")
+                                            .font(.caption)
+                                            .fontWeight(.medium)
+                                        Text("L:\(String(format: "%.0f", low))°")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                } else {
+                                    Text(day.summary)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
 
                                 Spacer()
 
@@ -400,24 +451,5 @@ struct WeatherView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEE"
         return formatter.string(from: date)
-    }
-
-    private func weatherCodeFor(_ snapshot: WeatherSnapshot) -> Int {
-        switch snapshot.condition {
-        case "Clear": return 0
-        case "Partly Cloudy": return 1
-        case "Fog": return 45
-        case "Drizzle": return 51
-        case "Freezing Drizzle": return 56
-        case "Rain": return 61
-        case "Freezing Rain": return 66
-        case "Snow": return 71
-        case "Snow Grains": return 77
-        case "Rain Showers": return 80
-        case "Snow Showers": return 85
-        case "Thunderstorm": return 95
-        case "Thunderstorm with Hail": return 96
-        default: return 0
-        }
     }
 }

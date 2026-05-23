@@ -11,6 +11,7 @@ struct TodayView: View {
     @State private var showAddEvent = false
     @State private var isRefreshing = false
     @State private var weatherFetched = false
+    @State private var selectedSuggestion: ActivitySuggestion?
 
     @Query(sort: \CalendarEvent.startDate) private var allEvents: [CalendarEvent]
     @Query(sort: \ActivitySuggestion.date) private var allSuggestions: [ActivitySuggestion]
@@ -67,6 +68,9 @@ struct TodayView: View {
             NavigationStack {
                 AddEventView()
             }
+        }
+        .sheet(item: $selectedSuggestion) { suggestion in
+            suggestionDetailView(suggestion)
         }
         .task {
             await viewModel.loadDay(modelContext: modelContext)
@@ -168,15 +172,22 @@ struct TodayView: View {
 
             Button {
                 Task {
-                    await viewModel.refreshSuggestions(modelContext: modelContext)
+                    viewModel.isLoadingSuggestions = true
+                    await viewModel.refreshSuggestions(modelContext: modelContext, weather: viewModel.weather, location: locationService.currentCoordinate, settings: UserSettings.current(in: modelContext))
+                    viewModel.isLoadingSuggestions = false
                 }
             } label: {
-                Text("Get Suggestions")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 10)
-                    .background(Capsule().fill(Color.orange))
+                HStack {
+                    if viewModel.isLoadingSuggestions {
+                        ProgressView().tint(.white)
+                    }
+                    Text("Get Suggestions")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+                .background(Capsule().fill(Color.orange))
             }
         }
         .padding()
@@ -230,6 +241,9 @@ struct TodayView: View {
         .padding()
         .frame(width: 180, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)).shadow(color: .black.opacity(0.05), radius: 4))
+        .onTapGesture {
+            selectedSuggestion = suggestion
+        }
     }
 
     private var moneyCard: some View {
@@ -283,5 +297,111 @@ struct TodayView: View {
         if lower.contains("fog") { return "cloud.fog" }
         if lower.contains("wind") { return "wind" }
         return "cloud.sun"
+    }
+
+    private func suggestionDetailView(_ suggestion: ActivitySuggestion) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(suggestion.title)
+                            .font(.largeTitle.weight(.bold))
+
+                        if let category = suggestion.category {
+                            Text(category.capitalized)
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Color.blue))
+                        }
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Description")
+                            .font(.headline)
+                        Text(suggestion.summary)
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack(spacing: 20) {
+                        if let duration = suggestion.estimatedDurationMinutes {
+                            VStack(spacing: 4) {
+                                Image(systemName: "clock")
+                                    .font(.title3)
+                                    .foregroundColor(.orange)
+                                Text("\(duration) min")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        if let cost = suggestion.estimatedCostLevel {
+                            VStack(spacing: 4) {
+                                Image(systemName: "dollarsign.circle")
+                                    .font(.title3)
+                                    .foregroundColor(.green)
+                                Text(String(repeating: "$", count: min(cost, 3)))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    if let weatherReason = suggestion.weatherReason {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Weather")
+                                .font(.headline)
+                            HStack(spacing: 8) {
+                                Image(systemName: "cloud.sun")
+                                    .foregroundColor(.blue)
+                                Text(weatherReason)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    if let placeName = suggestion.placeName {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Nearby Place")
+                                .font(.headline)
+                            HStack(spacing: 8) {
+                                Image(systemName: "mappin.and.ellipse")
+                                    .foregroundColor(.orange)
+                                Text(placeName)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    Button {
+                        selectedSuggestion = nil
+                    } label: {
+                        Text("Dismiss")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Capsule().fill(Color.orange))
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Suggestion")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { selectedSuggestion = nil }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }

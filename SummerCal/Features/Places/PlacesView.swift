@@ -7,6 +7,7 @@ struct PlacesView: View {
     @State private var viewModel = PlacesViewModel()
     @State private var selectedPlace: PlaceCandidate?
     @State private var showDetail: Bool = false
+    @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -116,16 +117,29 @@ struct PlacesView: View {
     }
 
     private var mapContent: some View {
-        Map {
+        Map(position: $cameraPosition) {
             ForEach(viewModel.placeResults) { place in
                 Marker(place.name, coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude))
                     .tint(.orange)
             }
-            if let coord = CLLocationManager().location?.coordinate {
+            if let coord = viewModel.currentCoordinate {
                 Marker("You", systemImage: "person.circle.fill", coordinate: coord)
+                    .tint(.blue)
             }
         }
         .mapStyle(.standard)
+        .mapControls {
+            MapUserLocationButton()
+        }
+        .onChange(of: viewModel.currentCoordinate?.latitude) { _, _ in
+            if let coord = viewModel.currentCoordinate {
+                cameraPosition = .region(MKCoordinateRegion(
+                    center: coord,
+                    latitudinalMeters: 2000,
+                    longitudinalMeters: 2000
+                ))
+            }
+        }
     }
 
     private var locationDeniedView: some View {
@@ -305,14 +319,14 @@ struct PlacesView: View {
 
                 Section {
                     Button {
-                        let lat = place.latitude
-                        let lon = place.longitude
-                        if let url = URL(string: "http://maps.apple.com/?ll=\(lat),\(lon)&q=\(place.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? place.name)") {
-                            UIApplication.shared.open(url)
-                        }
+                        let url = URL(string: "http://maps.apple.com/?daddr=\(place.latitude),\(place.longitude)&dirflg=w")!
+                        UIApplication.shared.open(url)
                     } label: {
-                        Label("Get Directions", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                        Label("Navigate There", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
                 }
             }
             .navigationTitle("Place Details")

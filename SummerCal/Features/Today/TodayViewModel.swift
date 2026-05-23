@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import CoreLocation
 
 @Observable
 final class TodayViewModel {
@@ -15,6 +16,7 @@ final class TodayViewModel {
     var isLoading: Bool = false
     var errorMessage: String?
     var currencyCode: String = "USD"
+    var isLoadingSuggestions: Bool = false
 
     func loadDay(modelContext: ModelContext) async {
         isLoading = true
@@ -76,14 +78,108 @@ final class TodayViewModel {
         isLoading = false
     }
 
-    func refreshSuggestions(modelContext: ModelContext) async {
-        let service = ActivitySuggestionService()
-        let newSuggestions = service.generateQuickIdeas(weather: weather, preferences: [])
-        for suggestion in newSuggestions {
-            modelContext.insert(suggestion)
+    func refreshSuggestions(modelContext: ModelContext, weather: WeatherSnapshot?, location: Coordinate?, settings: UserSettings) async {
+        isLoadingSuggestions = true
+        errorMessage = nil
+
+        let weatherSummary: String
+        if let w = weather {
+            weatherSummary = "\(Int(w.temperatureCelsius))°C, \(w.condition), \(Int(w.precipitationChance * 100))% rain chance — \(w.summary)"
+        } else {
+            weatherSummary = "Unknown"
         }
-        try? modelContext.save()
-        suggestions = newSuggestions
+
+        var nearbyPlaces: [PlaceCandidate] = []
+        if let location = location {
+            let placesService = PlacesService()
+            await placesService.searchNearby(query: "point of interest", coordinate: location, radiusMeters: 3000)
+            nearbyPlaces = placesService.results
+        }
+
+        let dateStr = DateUtils.formattedDayAndDate(Date())
+        let preferences: [String] = []
+        let prompt = PromptBuilder.buildSmartSuggestionPrompt(
+            date: dateStr,
+            freeWindows: freeWindows,
+            todaysEvents: todaysEvents,
+            weatherSummary: weatherSummary,
+            nearbyPlaces: nearbyPlaces,
+            preferences: preferences
+        )
+
+        do {
+            let keychain = KeychainStore.shared
+            let providerKindRaw = settings.aiProviderKind
+            guard let providerKind = AIProviderKind(rawValue: providerKindRaw) else {
+                throw NSError(domain: "AI", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unknown AI provider"])
+            }
+            _ = try keychain.readAPIKey(provider: providerKindRaw)
+
+            let router = AIProviderRouter(keychain: keychain)
+            let client = try router.client(for: providerKind, settings: settings)
+            let config = AIRequestConfig(
+                model: settings.aiModelName,
+                maxTokens: settings.aiMaxTokens,
+                temperature: 0.7,
+                baseURL: settings.aiBaseURL
+            )
+            let messages = [
+                AIMessage(role: "system", content: "You are a helpful personal assistant that suggests activities based on context. Respond only with valid JSON."),
+                AIMessage(role: "user", content: prompt)
+            ]
+            let response = try await client.sendChat(messages: messages, config: config)
+            let parsed = parseSuggestionJSON(response.content)
+
+            for old in suggestions {
+                modelContext.delete(old)
+            }
+            try? modelContext.save()
+
+            for suggestion in parsed {
+                modelContext.insert(suggestion)
+            }
+            try? modelContext.save()
+            suggestions = parsed
+        } catch {
+            let fallback = ActivitySuggestionService().generateQuickIdeas(weather: weather, preferences: [])
+
+            for old in suggestions {
+                modelContext.delete(old)
+            }
+            try? modelContext.save()
+
+            for suggestion in fallback {
+                modelContext.insert(suggestion)
+            }
+            try? modelContext.save()
+            suggestions = fallback
+        }
+
+        isLoadingSuggestions = false
+    }
+
+    private func parseSuggestionJSON(_ content: String) -> [ActivitySuggestion] {
+        guard let data = content.data(using: .utf8) else { return [] }
+        do {
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+            return json.compactMap { item in
+                guard let title = item["title"] as? String,
+                      let summary = item["summary"] as? String else { return nil }
+                return ActivitySuggestion(
+                    date: Date(),
+                    title: title,
+                    summary: summary,
+                    category: item["category"] as? String,
+                    estimatedDurationMinutes: item["estimatedDurationMinutes"] as? Int,
+                    estimatedCostLevel: item["estimatedCostLevel"] as? Int,
+                    placeName: item["placeName"] as? String,
+                    weatherReason: item["weatherReason"] as? String,
+                    aiProvider: "ai"
+                )
+            }
+        } catch {
+            return []
+        }
     }
 
     private func detectFreeDay(calendar: Calendar, startOfDay: Date, endOfDay: Date) {

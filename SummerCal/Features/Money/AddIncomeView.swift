@@ -14,9 +14,13 @@ struct AddIncomeView: View {
 
     var onSave: (() -> Void)?
 
+    private var sanitizedAmount: Double {
+        let cleaned = amountText.replacingOccurrences(of: ",", with: ".")
+        return Double(cleaned) ?? 0
+    }
+
     private var amountIsValid: Bool {
-        guard let amount = Double(amountText), amount > 0 else { return false }
-        return true
+        sanitizedAmount > 0
     }
 
     private var currencyCode: String {
@@ -86,7 +90,7 @@ struct AddIncomeView: View {
     }
 
     private var formattedPreview: String {
-        let amount = Double(amountText) ?? 0
+        let amount = sanitizedAmount
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencyCode = currencyCode
@@ -112,7 +116,8 @@ struct AddIncomeView: View {
     }
 
     private func save() {
-        guard let amount = Double(amountText), amount > 0 else { return }
+        let amount = sanitizedAmount
+        guard amount > 0 else { return }
 
         let entry = IncomeEntry(
             date: date,

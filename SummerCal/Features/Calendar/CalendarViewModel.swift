@@ -7,6 +7,7 @@ final class CalendarViewModel {
     var selectedDay: Date
     var eventsOnSelectedDay: [CalendarEvent] = []
     var allEvents: [CalendarEvent] = []
+    var allWorkSessions: [WorkSession] = []
 
     private let calendar = Calendar.current
 
@@ -99,6 +100,20 @@ final class CalendarViewModel {
         return allEvents.contains { calendar.isDate($0.startDate, inSameDayAs: day) }
     }
 
+    func hasWorkSession(_ date: Date) -> Bool {
+        let day = calendar.startOfDay(for: date)
+        return allWorkSessions.contains { calendar.isDate($0.date, inSameDayAs: day) }
+    }
+
+    func dayIndicatorColor(_ date: Date) -> Color {
+        let events = hasEvents(date)
+        let work = hasWorkSession(date)
+        if events && work { return .orange }
+        if events { return .blue }
+        if work { return .green }
+        return .clear
+    }
+
     func updateEventsForSelectedDay() {
         let day = calendar.startOfDay(for: selectedDay)
         eventsOnSelectedDay = allEvents.filter { event in
@@ -109,6 +124,10 @@ final class CalendarViewModel {
     func refreshEvents(with events: [CalendarEvent]) {
         allEvents = events.sorted { $0.startDate < $1.startDate }
         updateEventsForSelectedDay()
+    }
+
+    func refreshWorkSessions(with sessions: [WorkSession]) {
+        allWorkSessions = sessions
     }
 }
 

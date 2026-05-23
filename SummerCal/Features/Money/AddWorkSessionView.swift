@@ -14,7 +14,8 @@ struct AddWorkSessionView: View {
     var onSave: (() -> Void)?
 
     private var hourlyRate: Double {
-        Double(hourlyRateText) ?? 0
+        let cleaned = hourlyRateText.replacingOccurrences(of: ",", with: ".")
+        return Double(cleaned) ?? 0
     }
 
     private var durationHours: Double {

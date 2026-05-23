@@ -9,6 +9,7 @@ struct CalendarView: View {
     @State private var showAddEvent = false
 
     @Query(sort: \CalendarEvent.startDate) private var events: [CalendarEvent]
+    @Query(sort: \WorkSession.date) private var workSessions: [WorkSession]
 
     private let columns = Array(repeating: GridItem(.flexible()), count: 7)
 
@@ -41,9 +42,13 @@ struct CalendarView: View {
         }
         .onAppear {
             viewModel.refreshEvents(with: events)
+            viewModel.refreshWorkSessions(with: workSessions)
         }
         .onChange(of: events) { _, newEvents in
             viewModel.refreshEvents(with: newEvents)
+        }
+        .onChange(of: workSessions) { _, newSessions in
+            viewModel.refreshWorkSessions(with: newSessions)
         }
     }
 
@@ -104,7 +109,6 @@ struct CalendarView: View {
         let isSelected = Calendar.current.isDate(date, inSameDayAs: viewModel.selectedDay)
         let isToday = viewModel.isToday(date)
         let inCurrentMonth = viewModel.isCurrentMonth(date)
-        let hasEvent = viewModel.hasEvents(date)
 
         return Button {
             withAnimation { viewModel.selectDay(date) }
@@ -125,7 +129,7 @@ struct CalendarView: View {
                     )
 
                 Circle()
-                    .fill(hasEvent ? Color.orange : Color.clear)
+                    .fill(viewModel.dayIndicatorColor(date))
                     .frame(width: 5, height: 5)
             }
         }

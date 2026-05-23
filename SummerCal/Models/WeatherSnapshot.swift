@@ -13,6 +13,13 @@ final class WeatherSnapshot {
     var precipitationChance: Double
     var windSpeedKph: Double?
     var summary: String
+    var humidity: Double?
+    var feelsLikeCelsius: Double?
+    var uvIndex: Int?
+    var visibility: Double?
+    var pressure: Double?
+    var highTemp: Double?
+    var lowTemp: Double?
 
     init(
         id: UUID = UUID(),
@@ -24,7 +31,14 @@ final class WeatherSnapshot {
         temperatureCelsius: Double,
         precipitationChance: Double,
         windSpeedKph: Double? = nil,
-        summary: String
+        summary: String,
+        humidity: Double? = nil,
+        feelsLikeCelsius: Double? = nil,
+        uvIndex: Int? = nil,
+        visibility: Double? = nil,
+        pressure: Double? = nil,
+        highTemp: Double? = nil,
+        lowTemp: Double? = nil
     ) {
         self.id = id
         self.latitude = latitude
@@ -36,5 +50,12 @@ final class WeatherSnapshot {
         self.precipitationChance = precipitationChance
         self.windSpeedKph = windSpeedKph
         self.summary = summary
+        self.humidity = humidity
+        self.feelsLikeCelsius = feelsLikeCelsius
+        self.uvIndex = uvIndex
+        self.visibility = visibility
+        self.pressure = pressure
+        self.highTemp = highTemp
+        self.lowTemp = lowTemp
     }
 }
