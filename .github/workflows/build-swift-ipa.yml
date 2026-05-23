@@ -14,21 +14,21 @@ jobs:
       
       - name: Generate Xcode project
         run: |
-          cd $GITHUB_WORKSPACE/SummerCal
+          cd $GITHUB_WORKSPACE
           xcodegen generate
-          echo "=== Generated files ==="
-          ls -la
-          echo "=== Available schemes ==="
+          echo "=== Generated ==="
+          ls -la SummerCal.xcodeproj
+          echo "=== Schemes ==="
           xcodebuild -project SummerCal.xcodeproj -list
       
       - name: Build unsigned IPA
         run: |
-          cd $GITHUB_WORKSPACE/SummerCal
+          cd $GITHUB_WORKSPACE
           xcodebuild archive \
             -project SummerCal.xcodeproj \
             -scheme SummerCal \
             -configuration Release \
-            -archivePath $GITHUB_WORKSPACE/build/SummerCal.xcarchive \
+            -archivePath build/SummerCal.xcarchive \
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=No \
             CODE_SIGNING_REQUIRED=No \
@@ -38,14 +38,8 @@ jobs:
       
       - name: Package IPA
         run: |
-          echo "=== Looking for .app ==="
-          find $GITHUB_WORKSPACE/build -name "*.app" -type d
           APP_PATH=$(find $GITHUB_WORKSPACE/build -name "*.app" -type d | head -1)
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No .app found!"
-            exit 1
-          fi
-          echo "Found: $APP_PATH"
+          echo "App: $APP_PATH"
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
           zip -r $GITHUB_WORKSPACE/SummerCal.ipa Payload
