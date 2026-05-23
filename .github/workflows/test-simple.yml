@@ -1,0 +1,8 @@
+name: Test Ubuntu Explicit
+on: [workflow_dispatch]
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Hello from Ubuntu 24.04"
+      - run: uname -a
