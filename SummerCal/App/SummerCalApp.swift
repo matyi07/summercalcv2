@@ -38,7 +38,7 @@ struct SummerCalApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environment(appRouter)
+                .environmentObject(appRouter)
                 .task {
                     await requestNotificationPermissionIfNeeded()
                 }

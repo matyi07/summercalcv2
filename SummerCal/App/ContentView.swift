@@ -2,13 +2,12 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
-    @Environment(AppRouter.self) private var router
+    @EnvironmentObject private var router: AppRouter
     @Environment(\.modelContext) private var modelContext
     @State private var locationService = LocationService()
     @State private var weatherService = WeatherService()
 
     var body: some View {
-        @Bindable var router = router
 
         ZStack {
             TabView(selection: $router.selectedTab) {

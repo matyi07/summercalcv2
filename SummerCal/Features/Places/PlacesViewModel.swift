@@ -170,11 +170,8 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
                 )
                 fetched.append(place)
 
-                if savedPlaces.contains(where: { $0.name == shortName && $0.latitude == lat }) {
-                    if let idx = savedPlaces.firstIndex(where: { $0.id == place.id }),
-                       let existing = try? modelContext.fetch(FetchDescriptor<PlaceCandidate>(predicate: #Predicate { $0.id == place.id })).first {
-                        continue
-                    }
+                if let idx = savedPlaces.firstIndex(where: { $0.id == place.id }) {
+                    continue
                 }
                 modelContext.insert(place)
             }
