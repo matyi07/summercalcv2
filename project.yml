@@ -16,7 +16,9 @@ targets:
     type: application
     platform: iOS
     sources:
-      - SummerCal
+      - path: SummerCal
+        excludes:
+          - "Package.swift"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.summercal.v2
