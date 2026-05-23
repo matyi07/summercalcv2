@@ -17,7 +17,7 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "SummerCal uses your location to show local weather and nearby places. You can disable this anytime.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "SummerCal uses your location for weather alerts and place suggestions.",
-        "UIBackgroundModes": ["fetch", "remote-notification"]
+        "UIBackgroundModes": ["remote-notification"]
       },
       "buildNumber": "1"
     },
@@ -42,10 +42,6 @@
           "icon": "./assets/notification-icon.png",
           "color": "#FF9500"
         }
-      ],
-      [
-        "expo-background-fetch",
-        "Background fetch for weather and suggestion updates"
       ]
     ],
     "experiments": {
