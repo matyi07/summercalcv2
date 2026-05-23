@@ -1,0 +1,49 @@
+workflows:
+  build-ios-ipa:
+    name: Build iOS IPA
+    instance_type: mac_mini_m1
+    max_build_duration: 30
+    environment:
+      node: 20.11.0
+      groups:
+        - default
+    triggering:
+      events:
+        - push
+        - workflow_dispatch
+    working_directory: SummerCalExpo
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+      - name: Prebuild iOS project
+        script: npx expo prebuild --platform ios --clean
+      - name: Install CocoaPods
+        script: |
+          cd ios
+          pod install || pod install --repo-update || true
+      - name: Build unsigned IPA
+        script: |
+          cd ios
+          xcodebuild \
+            -workspace SummerCal.xcworkspace \
+            -scheme SummerCal \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ../build \
+            CODE_SIGNING_ALLOWED=No \
+            CODE_SIGNING_REQUIRED=No \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            ONLY_ACTIVE_ARCH=NO
+      - name: Package IPA
+        script: |
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" -type d | head -1)
+          APP_NAME=$(basename "$APP_PATH")
+          mkdir -p Payload
+          cp -R "$APP_PATH" "Payload/$APP_NAME"
+          zip -r SummerCal.ipa Payload
+          rm -rf Payload
+          ls -la SummerCal.ipa
+    artifacts:
+      - SummerCalExpo/SummerCal.ipa
