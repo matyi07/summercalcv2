@@ -1,10 +1,6 @@
 name: Build IPA (Swift)
 
 on:
-  push:
-    paths:
-      - 'SummerCal/**'
-      - '.github/workflows/build-swift-ipa.yml'
   workflow_dispatch:
 
 jobs:
@@ -17,27 +13,22 @@ jobs:
         run: brew install xcodegen
       
       - name: Generate Xcode project
-        working-directory: SummerCal
-        run: xcodegen generate
-      
-      - name: Show project info
-        working-directory: SummerCal
         run: |
-          echo "=== Files ==="
+          cd $GITHUB_WORKSPACE/SummerCal
+          xcodegen generate
+          echo "=== Generated files ==="
           ls -la
-          echo "=== Xcode project ==="
-          ls -la *.xcodeproj 2>/dev/null || echo "No xcodeproj"
-          echo "=== Schemes ==="
-          xcodebuild -project *.xcodeproj -list 2>/dev/null || true
+          echo "=== Available schemes ==="
+          xcodebuild -project SummerCal.xcodeproj -list
       
-      - name: Build unsigned archive
-        working-directory: SummerCal
+      - name: Build unsigned IPA
         run: |
+          cd $GITHUB_WORKSPACE/SummerCal
           xcodebuild archive \
             -project SummerCal.xcodeproj \
             -scheme SummerCal \
             -configuration Release \
-            -archivePath ../build/SummerCal.xcarchive \
+            -archivePath $GITHUB_WORKSPACE/build/SummerCal.xcarchive \
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=No \
             CODE_SIGNING_REQUIRED=No \
@@ -45,25 +36,21 @@ jobs:
             CODE_SIGN_ENTITLEMENTS="" \
             ONLY_ACTIVE_ARCH=NO
       
-      - name: Package as IPA
+      - name: Package IPA
         run: |
-          echo "=== Archive contents ==="
-          ls -la build/SummerCal.xcarchive/Products/Applications/ 2>/dev/null || echo "No Products dir"
-          find build -name "*.app" -type d 2>/dev/null
-          
-          APP_PATH=$(find build -name "*.app" -type d 2>/dev/null | head -1)
-          echo "App: $APP_PATH"
-          
-          if [ -n "$APP_PATH" ]; then
-            mkdir -p Payload
-            cp -R "$APP_PATH" Payload/
-            zip -r SummerCal.ipa Payload
-            rm -rf Payload
-            ls -la SummerCal.ipa
-          else
-            echo "No .app found!"
+          echo "=== Looking for .app ==="
+          find $GITHUB_WORKSPACE/build -name "*.app" -type d
+          APP_PATH=$(find $GITHUB_WORKSPACE/build -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app found!"
             exit 1
           fi
+          echo "Found: $APP_PATH"
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -r $GITHUB_WORKSPACE/SummerCal.ipa Payload
+          rm -rf Payload
+          ls -la $GITHUB_WORKSPACE/SummerCal.ipa
       
       - uses: actions/upload-artifact@v4
         with:
