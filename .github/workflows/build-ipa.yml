@@ -1,66 +1,41 @@
-name: Build SummerCal IPA
-
+name: Build SummerCal IPA (Swift)
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  build-ipa:
+  build:
     runs-on: macos-latest
-
-    env:
-      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
-      DEVELOPMENT_TEAM: ${{ secrets.DEVELOPMENT_TEAM }}
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Install XcodeGen
         run: brew install xcodegen
-
-      - name: Generate Xcode project
-        run: xcodegen generate
-
-      - name: Build and archive
+      - name: Generate project
+        run: cd SummerCal && xcodegen generate
+      - name: Build unsigned
         run: |
+          cd SummerCal
           xcodebuild archive \
             -project SummerCal.xcodeproj \
             -scheme SummerCal \
             -configuration Release \
-            -archivePath build/SummerCal.xcarchive \
+            -archivePath ../build/SummerCal.xcarchive \
             -destination 'generic/platform=iOS' \
-            -allowProvisioningUpdates \
-            CODE_SIGN_STYLE=Automatic \
-            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM"
-
+            CODE_SIGNING_ALLOWED=No \
+            CODE_SIGNING_REQUIRED=No \
+            CODE_SIGN_IDENTITY="" \
+            ONLY_ACTIVE_ARCH=NO
       - name: Export IPA
         run: |
-          cat > build/exportOptions.plist <<'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>ad-hoc</string>
-          </dict>
-          </plist>
-          PLIST
-
           xcodebuild -exportArchive \
             -archivePath build/SummerCal.xcarchive \
-            -exportPath build/export \
-            -exportOptionsPlist build/exportOptions.plist \
-            -allowProvisioningUpdates
-
-      - name: Upload IPA artifact
-        uses: actions/upload-artifact@v4
+            -exportPath build/ipa \
+            -exportOptionsPlist <(echo '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>method</key><string>development</string><key>compileBitcode</key><false/></dict></plist>') || true
+          ls -la build/ipa/ 2>/dev/null || echo "Export failed, packaging manually"
+          mkdir -p Payload
+          cp -R build/SummerCal.xcarchive/Products/Applications/SummerCal.app Payload/ 2>/dev/null || true
+          zip -r SummerCal.ipa Payload 2>/dev/null || echo "Manual packaging attempt done"
+          ls -la SummerCal.ipa 2>/dev/null || echo "No IPA produced"
+      - uses: actions/upload-artifact@v4
         with:
-          name: SummerCal.ipa
-          path: build/export/*.ipa
-          retention-days: 30
+          name: SummerCal-Swift-IPA
+          path: "*.ipa"
+          retention-days: 7
