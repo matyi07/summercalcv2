@@ -1,0 +1,79 @@
+name: Build iOS IPA (Expo)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: SummerCalExpo
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: SummerCalExpo/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Install CocoaPods
+        run: gem install cocoapods --no-document
+
+      - name: Prebuild iOS native project
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Install Pods
+        run: |
+          cd ios
+          pod install --verbose || pod install || true
+
+      - name: Build unsigned .app
+        run: |
+          cd ios
+          xcodebuild \
+            -workspace SummerCalExpo.xcworkspace \
+            -scheme SummerCalExpo \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ../build \
+            CODE_SIGNING_ALLOWED=No \
+            CODE_SIGNING_REQUIRED=No \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            ONLY_ACTIVE_ARCH=NO \
+            BITCODE_GENERATION_MODE=bitcode
+
+      - name: Package as IPA
+        run: |
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" -type d | head -1)
+          APP_NAME=$(basename "$APP_PATH")
+          mkdir -p Payload
+          cp -R "$APP_PATH" "Payload/$APP_NAME"
+          mkdir -p "$(dirname "$APP_PATH")/Export"
+          zip -r SummerCal.ipa Payload
+          rm -rf Payload
+          echo "IPA created at: $(pwd)/SummerCal.ipa"
+          ls -la SummerCal.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SummerCal-iOS-IPA
+          path: SummerCalExpo/SummerCal.ipa
+          retention-days: 7
