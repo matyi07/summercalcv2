@@ -1,0 +1,206 @@
+import Foundation
+import MapKit
+import CoreLocation
+
+struct Coordinate: Codable {
+    var latitude: Double
+    var longitude: Double
+
+    var clLocationCoordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+struct PlaceDetails: Codable {
+    var placeId: String
+    var name: String
+    var address: String?
+    var phoneNumber: String?
+    var websiteURL: String?
+    var openNow: Bool?
+    var rating: Double?
+}
+
+protocol PlacesProvider {
+    func searchNearby(query: String, coordinate: Coordinate, radiusMeters: Double) async throws -> [PlaceCandidate]
+    func details(placeId: String) async throws -> PlaceDetails
+}
+
+final class MapKitPlacesProvider: PlacesProvider {
+    func searchNearby(query: String, coordinate: Coordinate, radiusMeters: Double) async throws -> [PlaceCandidate] {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = query
+        request.region = MKCoordinateRegion(
+            center: coordinate.clLocationCoordinate,
+            latitudinalMeters: radiusMeters,
+            longitudinalMeters: radiusMeters
+        )
+
+        let search = MKLocalSearch(request: request)
+        let response = try await search.start()
+
+        let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return response.mapItems.map { item in
+            let distance = item.placemark.location.map { $0.distance(from: origin) } ?? 0
+            return PlaceCandidate(
+                name: item.name ?? "Unknown",
+                category: item.pointOfInterestCategory?.rawValue ?? "place",
+                address: item.placemark.formattedAddress,
+                latitude: item.placemark.coordinate.latitude,
+                longitude: item.placemark.coordinate.longitude,
+                rating: nil,
+                placeId: item.placemark.name ?? UUID().uuidString,
+                distanceMeters: distance
+            )
+        }
+    }
+
+    func details(placeId: String) async throws -> PlaceDetails {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = placeId
+
+        let search = MKLocalSearch(request: request)
+        let response = try await search.start()
+
+        guard let item = response.mapItems.first else {
+            throw NSError(domain: "Places", code: 404, userInfo: [NSLocalizedDescriptionKey: "Place not found"])
+        }
+
+        return PlaceDetails(
+            placeId: placeId,
+            name: item.name ?? "Unknown",
+            address: item.placemark.formattedAddress,
+            phoneNumber: item.phoneNumber,
+            websiteURL: item.url?.absoluteString,
+            openNow: nil,
+            rating: nil
+        )
+    }
+}
+
+final class GooglePlacesProvider: PlacesProvider {
+    private let apiKey: String
+    private let baseURL = "https://maps.googleapis.com/maps/api/place"
+
+    init(apiKey: String) { self.apiKey = apiKey }
+
+    func searchNearby(query: String, coordinate: Coordinate, radiusMeters: Double) async throws -> [PlaceCandidate] {
+        guard !apiKey.isEmpty else { return [] }
+
+        var components = URLComponents(string: "\(baseURL)/nearbysearch/json")!
+        components.queryItems = [
+            URLQueryItem(name: "location", value: "\(coordinate.latitude),\(coordinate.longitude)"),
+            URLQueryItem(name: "radius", value: String(Int(radiusMeters))),
+            URLQueryItem(name: "keyword", value: query),
+            URLQueryItem(name: "key", value: apiKey)
+        ]
+
+        let (data, _) = try await URLSession.shared.data(from: components.url!)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let results = json?["results"] as? [[String: Any]] ?? []
+
+        let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return results.compactMap { place -> PlaceCandidate? in
+            guard let name = place["name"] as? String,
+                  let geometry = place["geometry"] as? [String: Any],
+                  let location = geometry["location"] as? [String: Any],
+                  let lat = location["lat"] as? Double,
+                  let lng = location["lng"] as? Double,
+                  let placeId = place["place_id"] as? String else { return nil }
+
+            let openingHours = place["opening_hours"] as? [String: Any]
+            let openNow = openingHours?["open_now"] as? Bool
+            let rating = place["rating"] as? Double
+            let vicinity = place["vicinity"] as? String ?? ""
+            let types = place["types"] as? [String] ?? []
+
+            let placeLoc = CLLocation(latitude: lat, longitude: lng)
+
+            return PlaceCandidate(
+                name: name,
+                category: types.first ?? "place",
+                address: vicinity,
+                latitude: lat,
+                longitude: lng,
+                openNow: openNow,
+                rating: rating,
+                placeId: placeId,
+                distanceMeters: origin.distance(from: placeLoc)
+            )
+        }
+    }
+
+    func details(placeId: String) async throws -> PlaceDetails {
+        var components = URLComponents(string: "\(baseURL)/details/json")!
+        components.queryItems = [
+            URLQueryItem(name: "place_id", value: placeId),
+            URLQueryItem(name: "key", value: apiKey)
+        ]
+
+        let (data, _) = try await URLSession.shared.data(from: components.url!)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let result = json?["result"] as? [String: Any]
+
+        guard let name = result?["name"] as? String else {
+            throw NSError(domain: "Places", code: 404, userInfo: [NSLocalizedDescriptionKey: "Place not found"])
+        }
+
+        let openingHours = result?["opening_hours"] as? [String: Any]
+
+        return PlaceDetails(
+            placeId: placeId,
+            name: name,
+            address: result?["formatted_address"] as? String,
+            phoneNumber: result?["formatted_phone_number"] as? String,
+            websiteURL: result?["website"] as? String,
+            openNow: openingHours?["open_now"] as? Bool,
+            rating: result?["rating"] as? Double
+        )
+    }
+}
+
+final class PlacesService: ObservableObject {
+    let mapKitProvider: PlacesProvider
+    let googlePlacesProvider: PlacesProvider?
+    @Published var isLoading = false
+    @Published var results: [PlaceCandidate] = []
+    @Published var error: String?
+
+    init(googleApiKey: String? = nil) {
+        self.mapKitProvider = MapKitPlacesProvider()
+        if let key = googleApiKey, !key.isEmpty {
+            self.googlePlacesProvider = GooglePlacesProvider(apiKey: key)
+        } else {
+            self.googlePlacesProvider = nil
+        }
+    }
+
+    func searchNearby(query: String, coordinate: Coordinate, radiusMeters: Double = 3000) async {
+        await MainActor.run { isLoading = true; error = nil }
+        do {
+            let provider: PlacesProvider = googlePlacesProvider ?? mapKitProvider
+            let candidates = try await provider.searchNearby(query: query, coordinate: coordinate, radiusMeters: radiusMeters)
+            await MainActor.run { results = candidates; isLoading = false }
+        } catch {
+            await MainActor.run { self.error = error.localizedDescription; isLoading = false }
+        }
+    }
+
+    func openNowCandidates(for query: String, location: Coordinate) async throws -> [PlaceCandidate] {
+        let provider: PlacesProvider = googlePlacesProvider ?? mapKitProvider
+        let candidates = try await provider.searchNearby(query: query, coordinate: location, radiusMeters: 3000)
+        if googlePlacesProvider != nil {
+            return candidates.filter { $0.openNow != false }
+        }
+        return candidates
+    }
+
+    func placeDetails(placeId: String) async throws -> PlaceDetails {
+        let provider: PlacesProvider = googlePlacesProvider ?? mapKitProvider
+        return try await provider.details(placeId: placeId)
+    }
+
+    func popularCategories() -> [String] {
+        ["cafe", "gym", "restaurant", "park", "museum", "shopping", "errand"]
+    }
+}
