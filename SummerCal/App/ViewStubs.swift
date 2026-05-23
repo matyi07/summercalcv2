@@ -1,13 +1,5 @@
 import SwiftUI
 
-struct NotificationSettingsView: View {
-    var body: some View {
-        Text("Notification Settings")
-            .font(.largeTitle)
-            .navigationTitle("Notifications")
-    }
-}
-
 struct AddExpenseView: View {
     var body: some View {
         Text("Add Expense")

@@ -33,7 +33,7 @@ struct SettingsView: View {
             viewModel.saveSettings(modelContext: modelContext)
         }
         .sheet(isPresented: $showNotificationSettings) {
-            NotificationSettingsView()
+            SmartNotificationSettingsView()
         }
         .alert("Reset All Data", isPresented: $showResetConfirmation) {
             Button("Cancel", role: .cancel) {}
@@ -75,7 +75,7 @@ struct SettingsView: View {
 
     private var notificationsSection: some View {
         Section {
-            NavigationLink(destination: NotificationSettingsView()) {
+            NavigationLink(destination: SmartNotificationSettingsView()) {
                 Label("Notification Settings", systemImage: "bell.badge")
             }
         } header: {

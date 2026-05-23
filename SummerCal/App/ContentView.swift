@@ -52,7 +52,6 @@ struct ContentView: View {
             }
         }
         .task {
-            await NotificationService.shared.requestPermission()
             locationService.requestWhenInUsePermission()
         }
     }

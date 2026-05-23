@@ -9,6 +9,7 @@ struct AISettingsView: View {
         ("anthropic", "Anthropic", "sparkles"),
         ("google", "Google AI", "g.circle"),
         ("mistral", "Mistral AI", "leaf.circle"),
+        ("deepSeek", "DeepSeek", "brain"),
         ("custom", "Custom", "server.rack")
     ]
 
@@ -17,6 +18,7 @@ struct AISettingsView: View {
         "anthropic": ["claude-3-opus", "claude-3-sonnet", "claude-3-haiku", "claude-3.5-sonnet"],
         "google": ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.0-pro"],
         "mistral": ["mistral-large", "mistral-medium", "mistral-small"],
+        "deepSeek": ["deepseek-chat", "deepseek-coder"],
         "custom": []
     ]
 
@@ -98,6 +100,21 @@ struct AISettingsView: View {
                     }
                 }
                 .disabled(viewModel.apiKey.isEmpty || viewModel.isTestingConnection)
+            }
+
+            Section {
+                Button {
+                    viewModel.saveSettings(modelContext: modelContext)
+                } label: {
+                    HStack {
+                        Spacer()
+                        Label("Save Settings", systemImage: "square.and.arrow.down")
+                            .fontWeight(.semibold)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
             }
         }
         .navigationTitle("AI Settings")

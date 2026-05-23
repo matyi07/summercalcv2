@@ -14,6 +14,7 @@ final class TodayViewModel {
     var monthlyGoal: Double?
     var isLoading: Bool = false
     var errorMessage: String?
+    var currencyCode: String = "USD"
 
     func loadDay(modelContext: ModelContext) async {
         isLoading = true
@@ -23,18 +24,11 @@ final class TodayViewModel {
         let startOfDay = calendar.startOfDay(for: Date())
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
 
-        let eventDescriptor = FetchDescriptor<CalendarEvent>(
-            predicate: #Predicate { event in
+        let allEventsDescriptor = FetchDescriptor<CalendarEvent>(sortBy: [SortDescriptor(\.startDate)])
+        if let allEvents = try? modelContext.fetch(allEventsDescriptor) {
+            todaysEvents = allEvents.filter { event in
                 event.startDate >= startOfDay && event.startDate < endOfDay
-            },
-            sortBy: [SortDescriptor(\.startDate)]
-        )
-        do {
-            todaysEvents = try modelContext.fetch(eventDescriptor)
-        } catch {
-            errorMessage = "Failed to load events."
-            isLoading = false
-            return
+            }
         }
 
         let suggestionDescriptor = FetchDescriptor<ActivitySuggestion>(
@@ -74,6 +68,7 @@ final class TodayViewModel {
 
         let settings = UserSettings.current(in: modelContext)
         monthlyGoal = settings.monthlyIncomeGoal
+        currencyCode = settings.currencyCode
 
         detectFreeDay(calendar: calendar, startOfDay: startOfDay, endOfDay: endOfDay)
         findCurrentEvent()
@@ -82,17 +77,13 @@ final class TodayViewModel {
     }
 
     func refreshSuggestions(modelContext: ModelContext) async {
-        let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: Date())
-        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
-
-        let descriptor = FetchDescriptor<ActivitySuggestion>(
-            predicate: #Predicate { suggestion in
-                suggestion.date >= startOfDay && suggestion.date < endOfDay
-            },
-            sortBy: [SortDescriptor(\.date)]
-        )
-        suggestions = (try? modelContext.fetch(descriptor)) ?? []
+        let service = ActivitySuggestionService()
+        let newSuggestions = service.generateQuickIdeas(weather: weather, preferences: [])
+        for suggestion in newSuggestions {
+            modelContext.insert(suggestion)
+        }
+        try? modelContext.save()
+        suggestions = newSuggestions
     }
 
     private func detectFreeDay(calendar: Calendar, startOfDay: Date, endOfDay: Date) {

@@ -10,6 +10,7 @@ struct TodayView: View {
     @State private var viewModel = TodayViewModel()
     @State private var showAddEvent = false
     @State private var isRefreshing = false
+    @State private var weatherFetched = false
 
     @Query(sort: \CalendarEvent.startDate) private var allEvents: [CalendarEvent]
     @Query(sort: \ActivitySuggestion.date) private var allSuggestions: [ActivitySuggestion]
@@ -69,6 +70,13 @@ struct TodayView: View {
         }
         .task {
             await viewModel.loadDay(modelContext: modelContext)
+        }
+        .onChange(of: locationService.currentCoordinate) { _, coord in
+            guard let coord = coord else { return }
+            Task {
+                await weatherService.fetchWeather(for: coord)
+                await viewModel.loadDay(modelContext: modelContext)
+            }
         }
     }
 
@@ -231,11 +239,11 @@ struct TodayView: View {
                     .font(.headline)
                 Spacer()
                 if let goal = viewModel.monthlyGoal, goal > 0 {
-                    Text("\(viewModel.monthlyEarnings, format: .currency(code: "USD")) / \(goal, format: .currency(code: "USD"))")
+                    Text("\(viewModel.monthlyEarnings, format: .currency(code: viewModel.currencyCode)) / \(goal, format: .currency(code: viewModel.currencyCode))")
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.secondary)
                 } else {
-                    Text(viewModel.monthlyEarnings, format: .currency(code: "USD"))
+                    Text(viewModel.monthlyEarnings, format: .currency(code: viewModel.currencyCode))
                         .font(.subheadline.weight(.medium))
                         .foregroundColor(.secondary)
                 }

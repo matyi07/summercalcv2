@@ -112,7 +112,8 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
 
     func searchPlaces(modelContext: ModelContext) async {
         guard let coordinate = currentCoordinate else {
-            errorMessage = "Location not available"
+            errorMessage = "Location not available. Please enable location services."
+            requestLocation()
             return
         }
 
