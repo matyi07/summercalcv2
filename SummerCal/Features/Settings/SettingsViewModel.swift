@@ -46,7 +46,7 @@ final class SettingsViewModel {
         aiBaseURL = s.aiBaseURL ?? ""
         maxTokens = 1024
         currencyCode = s.currencyCode
-        monthlyIncomeGoal = s.monthlyIncomeGoal
+        monthlyIncomeGoal = s.monthlyIncomeGoal ?? 0
 
         apiKey = loadAPIKey(for: s.aiProviderKind) ?? ""
         locationEnabled = true

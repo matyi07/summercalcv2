@@ -227,29 +227,3 @@ struct SmartNotificationSettingsView: View {
         }
     }
 }
-
-private extension SmartNotificationKind {
-    var displayName: String {
-        switch self {
-        case .upcomingEvent: return "Upcoming Events"
-        case .freeDay: return "Free Day"
-        case .freeAfternoon: return "Free Afternoon"
-        case .weatherSummary: return "Weather Summary"
-        case .weatherAlert: return "Weather Alerts"
-        case .eventPrep: return "Event Prep"
-        case .moneyReminder: return "Money Reminder"
-        }
-    }
-
-    var description: String {
-        switch self {
-        case .upcomingEvent: return "Remind you before upcoming events"
-        case .freeDay: return "Notify when your day is mostly free"
-        case .freeAfternoon: return "Notify when your afternoon opens up"
-        case .weatherSummary: return "Daily weather summary for your area"
-        case .weatherAlert: return "Alerts for rain, heat, or cold conditions"
-        case .eventPrep: return "Reminders to prepare for events"
-        case .moneyReminder: return "Updates on monthly earnings progress"
-        }
-    }
-}

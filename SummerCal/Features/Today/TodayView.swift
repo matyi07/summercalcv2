@@ -92,7 +92,7 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(Int(w.temperatureCelsius))°C  \(w.condition)")
                         .font(.headline)
-                    Text(locationService.currentLocationName)
+                    Text(locationService.currentCity ?? "Unknown")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -103,7 +103,7 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("--°C")
                         .font(.headline)
-                    Text(locationService.currentLocationName)
+                    Text(locationService.currentCity ?? "Unknown")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -126,7 +126,7 @@ struct TodayView: View {
                 .font(.title3.weight(.semibold))
 
             HStack(spacing: 16) {
-                Label(event.startDate, style: .time)
+                Text(event.startDate, style: .time)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 if let location = event.location, !location.isEmpty {

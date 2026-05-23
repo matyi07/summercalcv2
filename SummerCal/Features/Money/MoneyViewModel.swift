@@ -49,7 +49,7 @@ final class MoneyViewModel {
 
     func loadSettings(modelContext: ModelContext) {
         let settings = UserSettings.current(in: modelContext)
-        monthlyGoal = settings.monthlyIncomeGoal
+        monthlyGoal = settings.monthlyIncomeGoal ?? 0
         currencyCode = settings.currencyCode
     }
 

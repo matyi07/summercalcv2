@@ -11,7 +11,7 @@ final class SmartNotificationViewModel {
 
     func loadAll(modelContext: ModelContext) {
         let ruleDescriptor = FetchDescriptor<SmartNotificationRule>(
-            sortBy: [SortDescriptor(\.kind)]
+            sortBy: [SortDescriptor(\.preferredHour)]
         )
         rules = (try? modelContext.fetch(ruleDescriptor)) ?? []
 
@@ -69,7 +69,7 @@ final class SmartNotificationViewModel {
             userSettings = UserSettings.current(in: modelContext)
             return
         }
-        settings.freeDayThresholdHours = hours
+        settings.freeDayThresholdHours = Double(hours)
         settings.updatedAt = Date()
         try? modelContext.save()
     }
@@ -175,8 +175,9 @@ final class SmartNotificationViewModel {
 
         do {
             try await Task.sleep(nanoseconds: 1_000_000_000)
-            try await NotificationService.shared.requestPermission()
-            try await NotificationService.shared.scheduleSmartNotifications(rules: rules, modelContext: modelContext)
+            _ = await NotificationService.shared.requestPermission()
+            let service = SmartNotificationService()
+            await service.runDailyPipeline(for: Date(), modelContext: modelContext)
         } catch {
             scheduleError = error.localizedDescription
         }

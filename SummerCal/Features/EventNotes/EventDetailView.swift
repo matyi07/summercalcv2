@@ -114,13 +114,18 @@ struct EventDetailView: View {
 
             HStack(spacing: 16) {
                 if event.isAllDay {
-                    Label(event.startDate, style: .date)
+                    Text(event.startDate, style: .date)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 } else {
-                    Label("\(event.startDate, style: .date)  \(event.startDate, style: .time) – \(event.endDate, style: .time)", systemImage: "clock")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 4) {
+                        Text(event.startDate, style: .date)
+                        Text(event.startDate, style: .time)
+                        Text("–")
+                        Text(event.endDate, style: .time)
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
                 }
 
                 if let category = event.category {

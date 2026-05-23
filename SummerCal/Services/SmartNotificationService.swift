@@ -70,7 +70,7 @@ final class SmartNotificationService {
             case .eventPrep:
                 break
             case .moneyReminder:
-                if settings.monthlyIncomeGoal > 0 {
+                if (settings.monthlyIncomeGoal ?? 0) > 0 {
                     await scheduleAndLog(
                         kind: .moneyReminder,
                         title: "Money Check",

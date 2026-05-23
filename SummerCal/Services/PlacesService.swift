@@ -42,10 +42,11 @@ final class MapKitPlacesProvider: PlacesProvider {
         let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         return response.mapItems.map { item in
             let distance = item.placemark.location.map { $0.distance(from: origin) } ?? 0
+            let address = [item.placemark.thoroughfare, item.placemark.locality, item.placemark.administrativeArea, item.placemark.postalCode, item.placemark.country].compactMap { $0 }.joined(separator: ", ")
             return PlaceCandidate(
                 name: item.name ?? "Unknown",
                 category: item.pointOfInterestCategory?.rawValue ?? "place",
-                address: item.placemark.formattedAddress,
+                address: address,
                 latitude: item.placemark.coordinate.latitude,
                 longitude: item.placemark.coordinate.longitude,
                 rating: nil,
@@ -66,10 +67,12 @@ final class MapKitPlacesProvider: PlacesProvider {
             throw NSError(domain: "Places", code: 404, userInfo: [NSLocalizedDescriptionKey: "Place not found"])
         }
 
+        let address = [item.placemark.thoroughfare, item.placemark.locality, item.placemark.administrativeArea, item.placemark.postalCode, item.placemark.country].compactMap { $0 }.joined(separator: ", ")
+
         return PlaceDetails(
             placeId: placeId,
             name: item.name ?? "Unknown",
-            address: item.placemark.formattedAddress,
+            address: address,
             phoneNumber: item.phoneNumber,
             websiteURL: item.url?.absoluteString,
             openNow: nil,

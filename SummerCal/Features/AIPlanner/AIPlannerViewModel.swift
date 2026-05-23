@@ -72,7 +72,7 @@ struct AIPlannerContext {
 
         if let settings = preferences {
             parts.append("User's currency: \(settings.currencyCode)")
-            parts.append("Monthly income goal: \(String(format: "%.2f", settings.monthlyIncomeGoal))")
+            parts.append("Monthly income goal: \(String(format: "%.2f", settings.monthlyIncomeGoal ?? 0))")
         }
 
         if !todaysEvents.isEmpty {
