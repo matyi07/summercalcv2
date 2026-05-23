@@ -25,37 +25,46 @@ jobs:
       - name: Prebuild iOS project
         run: npx expo prebuild --platform ios --clean
 
-      - name: Debug - list ios directory
+      - name: Setup CocoaPods
         run: |
-          echo "=== ios directory ==="
-          ls -la ios/
-          echo "=== Podfile ==="
-          cat ios/Podfile 2>/dev/null | head -30 || echo "No Podfile"
-
-      - name: Install Ruby deps
-        run: |
-          gem install cocoapods --no-document
-          gem install bundler --no-document
+          sudo gem install cocoapods --no-document
+          pod --version
 
       - name: Install Pods
         working-directory: SummerCalExpo/ios
         run: |
-          pod install --repo-update 2>&1 || pod install 2>&1 || echo "Pod install had issues, checking workspace..."
-          ls -la *.xcworkspace 2>/dev/null || echo "No workspace found"
+          pod repo update 2>&1 | tail -5 || true
+          pod install --verbose 2>&1 | tail -50
+          echo "--- Checking workspace ---"
+          ls -la *.xcworkspace 2>/dev/null || echo "No workspace"
+          ls -la *.xcodeproj 2>/dev/null || echo "No project"
 
-      - name: Debug - list after pods
+      - name: Find scheme
         run: |
-          echo "=== ios after pods ==="
-          ls -la ios/
-          ls -la ios/*.xcworkspace 2>/dev/null || echo "No xcworkspace"
-          ls -la ios/*.xcodeproj 2>/dev/null || echo "No xcodeproj"
+          if [ -d "ios/SummerCalExpo.xcworkspace" ] || ls ios/*.xcworkspace 2>/dev/null; then
+            WORKSPACE=$(ls ios/*.xcworkspace -d 2>/dev/null | head -1)
+            echo "Workspace found: $WORKSPACE"
+            echo "Schemes in workspace:"
+            xcodebuild -workspace "$WORKSPACE" -list 2>/dev/null || echo "Could not list"
+            echo "WORKSPACE=$WORKSPACE" >> $GITHUB_ENV
+          elif [ -d "ios/SummerCalExpo.xcodeproj" ] || ls ios/*.xcodeproj 2>/dev/null; then
+            PROJECT=$(ls ios/*.xcodeproj -d 2>/dev/null | head -1)
+            echo "Project found: $PROJECT"
+            echo "Schemes in project:"
+            xcodebuild -project "$PROJECT" -list 2>/dev/null || echo "Could not list"
+            echo "PROJECT=$PROJECT" >> $GITHUB_ENV
+          else
+            echo "Neither workspace nor project found!"
+            ls -la ios/
+            exit 1
+          fi
 
       - name: Build unsigned IPA
         run: |
-          WORKSPACE=$(find ios -name "*.xcworkspace" -type d 2>/dev/null | head -1)
-          if [ -n "$WORKSPACE" ]; then
-            SCHEME=$(basename "$WORKSPACE" .xcworkspace)
-            echo "Building workspace: $WORKSPACE, scheme: $SCHEME"
+          if [ -n "${WORKSPACE:-}" ]; then
+            # Get the first scheme from the workspace
+            SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list 2>/dev/null | sed -n '/Schemes:/,/^$/p' | grep -v Schemes | grep -v '^$' | head -1 | tr -d ' ')
+            echo "Building workspace: $WORKSPACE with scheme: $SCHEME"
             xcodebuild \
               -workspace "$WORKSPACE" \
               -scheme "$SCHEME" \
@@ -68,10 +77,9 @@ jobs:
               CODE_SIGN_IDENTITY="" \
               CODE_SIGN_ENTITLEMENTS="" \
               ONLY_ACTIVE_ARCH=NO
-          else
-            PROJECT=$(find ios -name "*.xcodeproj" -type d 2>/dev/null | head -1)
-            SCHEME=$(basename "$PROJECT" .xcodeproj)
-            echo "No workspace, building project: $PROJECT"
+          elif [ -n "${PROJECT:-}" ]; then
+            SCHEME=$(xcodebuild -project "$PROJECT" -list 2>/dev/null | sed -n '/Schemes:/,/^$/p' | grep -v Schemes | grep -v '^$' | head -1 | tr -d ' ')
+            echo "Building project: $PROJECT with scheme: $SCHEME"
             xcodebuild \
               -project "$PROJECT" \
               -scheme "$SCHEME" \
@@ -88,18 +96,17 @@ jobs:
 
       - name: Package IPA
         run: |
-          echo "=== Finding .app ==="
-          find build -name "*.app" -type d 2>/dev/null
-          APP_PATH=$(find build -name "*.app" -type d 2>/dev/null | head -1)
+          echo "Finding .app..."
+          find . -name "*.app" -type d 2>/dev/null | head -10
+          APP_PATH=$(find . -name "*.app" -type d 2>/dev/null | head -1)
           if [ -z "$APP_PATH" ]; then
-            echo "No .app found, searching everywhere..."
-            find / -name "*.app" -type d 2>/dev/null | head -5
+            find / -maxdepth 5 -name "*.app" -type d 2>/dev/null | head -10
+            echo "No .app found"
             exit 1
           fi
-          echo "App found: $APP_PATH"
-          APP_NAME=$(basename "$APP_PATH")
+          echo "App: $APP_PATH"
           mkdir -p Payload
-          cp -R "$APP_PATH" "Payload/$APP_NAME"
+          cp -R "$APP_PATH" Payload/
           zip -r ../SummerCal.ipa Payload
           rm -rf Payload
           ls -la ../SummerCal.ipa
