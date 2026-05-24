@@ -31,7 +31,7 @@ struct PlacesView: View {
                             .foregroundColor(.orange)
                         Text(error)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.systemGray))
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 4)
@@ -63,7 +63,7 @@ struct PlacesView: View {
             HStack {
                 HStack {
                     Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.systemGray))
                     TextField("Search places...", text: $viewModel.searchText)
                         .textFieldStyle(.plain)
                         .onSubmit {
@@ -84,6 +84,7 @@ struct PlacesView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(PlaceCategory.allCases) { category in
+                        let isSelected = viewModel.selectedCategory == category
                         Button {
                             viewModel.selectedCategory = category
                             Task { await viewModel.searchPlaces(modelContext: modelContext) }
@@ -92,9 +93,15 @@ struct PlacesView: View {
                                 .font(.caption)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
-                                .background(viewModel.selectedCategory == category ? .orange : Color(.systemGray6))
-                                .foregroundStyle(viewModel.selectedCategory == category ? .white : .primary)
+                                .background(isSelected ? .orange : Color(.systemGray6))
+                                .foregroundStyle(isSelected ? .white : .primary)
                                 .clipShape(Capsule())
+                                .overlay {
+                                    if isSelected {
+                                        Capsule()
+                                            .stroke(Color.orange.opacity(0.5), lineWidth: 1.5)
+                                    }
+                                }
                         }
                     }
                 }
@@ -107,7 +114,7 @@ struct PlacesView: View {
                         .foregroundColor(.orange)
                     Text(locationName)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.systemGray))
                     Spacer()
                 }
             }
@@ -152,7 +159,7 @@ struct PlacesView: View {
                     .fontWeight(.semibold)
                 Text("Enable location in Settings to find nearby places.")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.systemGray))
             }
             Spacer()
             Button("Settings") {
@@ -216,7 +223,7 @@ struct PlacesView: View {
                 if let address = place.address {
                     Text(address)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.systemGray))
                         .lineLimit(1)
                 }
 
@@ -239,7 +246,7 @@ struct PlacesView: View {
                                 .foregroundColor(.yellow)
                             Text(String(format: "%.1f", rating))
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color(.systemGray))
                         }
                     }
                 }
@@ -250,12 +257,13 @@ struct PlacesView: View {
             if let distance = place.distanceMeters {
                 Text(viewModel.formattedDistance(distance))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.systemGray))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Color(.systemGray6), in: Capsule())
             }
         }
+        .frame(minHeight: 44)
         .padding(.vertical, 4)
     }
 
@@ -284,13 +292,13 @@ struct PlacesView: View {
                         if let address = place.address {
                             Label(address, systemImage: "mappin.and.ellipse")
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color(.systemGray))
                         }
 
                         if let distance = place.distanceMeters {
                             Label(viewModel.formattedDistance(distance), systemImage: "figure.walk")
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color(.systemGray))
                         }
 
                         if let rating = place.rating {
@@ -308,6 +316,7 @@ struct PlacesView: View {
                         } label: {
                             Label("Open in Maps", systemImage: "map")
                         }
+                        .frame(minHeight: 44)
                     }
 
                     Button {
@@ -315,6 +324,7 @@ struct PlacesView: View {
                     } label: {
                         Label("Copy Address", systemImage: "doc.on.doc")
                     }
+                    .frame(minHeight: 44)
                 }
 
                 Section {
@@ -327,6 +337,7 @@ struct PlacesView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.blue)
+                    .frame(minHeight: 44)
                 }
             }
             .navigationTitle("Place Details")

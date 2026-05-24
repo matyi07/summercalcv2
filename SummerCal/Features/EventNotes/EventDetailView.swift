@@ -116,7 +116,7 @@ struct EventDetailView: View {
                 if event.isAllDay {
                     Text(event.startDate, style: .date)
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                 } else {
                     HStack(spacing: 4) {
                         Text(event.startDate, style: .date)
@@ -125,20 +125,20 @@ struct EventDetailView: View {
                         Text(event.endDate, style: .time)
                     }
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(.systemGray))
                 }
 
                 if let category = event.category {
                     Label(category.capitalized, systemImage: "tag")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                 }
             }
 
             if let location = event.location, !location.isEmpty {
                 Label(location, systemImage: "mappin.and.ellipse")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(.systemGray))
             }
 
             if event.isOutdoor {
@@ -157,21 +157,21 @@ struct EventDetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Reminders")
                 .font(.caption.weight(.semibold))
-                .foregroundColor(.secondary)
+                .foregroundColor(Color(.systemGray))
                 .textCase(.uppercase)
 
             if reminders.isEmpty {
                 Text("No reminders set")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(.systemGray))
             } else {
                 ForEach(reminders) { reminder in
                     HStack {
                         Image(systemName: reminder.isCompleted ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(reminder.isCompleted ? .green : .secondary)
+                            .foregroundColor(reminder.isCompleted ? .green : Color(.systemGray))
                         Text(reminder.reminderDate, style: .date)
                         Text(reminder.reminderDate, style: .time)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Color(.systemGray))
                     }
                     .font(.subheadline)
                 }
@@ -293,7 +293,7 @@ struct EventDetailView: View {
             if !note.body.isEmpty {
                 Text(note.body)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(.systemGray))
             }
 
             ForEach(note.checklistItems.indices, id: \.self) { index in
@@ -307,7 +307,7 @@ struct EventDetailView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: isChecked ? "checkmark.square.fill" : "square")
-                            .foregroundColor(isChecked ? .green : .secondary)
+                            .foregroundColor(isChecked ? .green : Color(.systemGray))
                         Text(display)
                             .strikethrough(isChecked)
                             .foregroundColor(.primary)
@@ -342,7 +342,7 @@ struct EventDetailView: View {
             if !note.body.isEmpty {
                 Text(note.body)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(.systemGray))
             }
 
             ForEach(note.links.indices, id: \.self) { index in
@@ -394,17 +394,17 @@ struct EventDetailView: View {
                         .font(.headline)
                     Text(snapshot.condition)
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                 }
                 Spacer()
                 VStack(alignment: .trailing) {
                     Text("\(Int(snapshot.precipitationChance * 100))% rain")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                     if let wind = snapshot.windSpeedKph {
                         Text("\(Int(wind)) km/h wind")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Color(.systemGray))
                     }
                 }
             }
@@ -419,10 +419,11 @@ struct EventDetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(note.body)
                 .font(.body)
+                .foregroundColor(Color(.label))
 
             Text(note.createdAt, style: .date)
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(Color(.systemGray))
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -441,10 +442,10 @@ struct EventDetailView: View {
         VStack(spacing: 8) {
             Image(systemName: "doc.text")
                 .font(.title2)
-                .foregroundColor(.secondary)
+                .foregroundColor(Color(.systemGray))
             Text(message)
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(Color(.systemGray))
         }
         .padding(.vertical, 40)
     }

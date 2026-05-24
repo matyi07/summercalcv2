@@ -90,7 +90,7 @@ struct TodayView: View {
                 .font(.largeTitle.weight(.bold))
             Text(formattedDate(Date()))
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(Color(.systemGray))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -106,7 +106,7 @@ struct TodayView: View {
                         .font(.headline)
                     Text(locationService.currentCity ?? "Unknown")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                 }
             } else {
                 Image(systemName: "cloud.sun")
@@ -117,7 +117,7 @@ struct TodayView: View {
                         .font(.headline)
                     Text(locationService.currentCity ?? "Unknown")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                 }
             }
             Spacer()
@@ -140,11 +140,11 @@ struct TodayView: View {
             HStack(spacing: 16) {
                 Text(event.startDate, style: .time)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(.systemGray))
                 if let location = event.location, !location.isEmpty {
                     Label(location, systemImage: "mappin.and.ellipse")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                 }
             }
         }
@@ -167,7 +167,7 @@ struct TodayView: View {
 
             Text("Want a plan based on weather and places nearby?")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(Color(.systemGray))
                 .multilineTextAlignment(.center)
 
             Button {
@@ -229,12 +229,12 @@ struct TodayView: View {
                 if let duration = suggestion.estimatedDurationMinutes {
                     Label("\(duration)m", systemImage: "clock")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                 }
                 if let cost = suggestion.estimatedCostLevel {
                     Label(String(repeating: "$", count: min(cost, 3)), systemImage: "dollarsign.circle")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                 }
             }
         }
@@ -255,11 +255,11 @@ struct TodayView: View {
                 if let goal = viewModel.monthlyGoal, goal > 0 {
                     Text("\(viewModel.monthlyEarnings, format: .currency(code: viewModel.currencyCode)) / \(goal, format: .currency(code: viewModel.currencyCode))")
                         .font(.subheadline.weight(.medium))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                 } else {
                     Text(viewModel.monthlyEarnings, format: .currency(code: viewModel.currencyCode))
                         .font(.subheadline.weight(.medium))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                 }
             }
 
@@ -270,11 +270,11 @@ struct TodayView: View {
 
                 Text("\(Int(min(viewModel.monthlyEarnings / goal * 100, 100)))% of monthly goal")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(.systemGray))
             } else {
                 Text("No monthly goal set")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(.systemGray))
             }
         }
         .padding()
@@ -324,7 +324,7 @@ struct TodayView: View {
                             .font(.headline)
                         Text(suggestion.summary)
                             .font(.body)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Color(.systemGray))
                     }
 
                     HStack(spacing: 20) {
@@ -335,7 +335,7 @@ struct TodayView: View {
                                     .foregroundColor(.orange)
                                 Text("\(duration) min")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(Color(.systemGray))
                             }
                         }
 
@@ -346,7 +346,7 @@ struct TodayView: View {
                                     .foregroundColor(.green)
                                 Text(String(repeating: "$", count: min(cost, 3)))
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(Color(.systemGray))
                             }
                         }
                     }
@@ -360,7 +360,7 @@ struct TodayView: View {
                                     .foregroundColor(.blue)
                                 Text(weatherReason)
                                     .font(.subheadline)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(Color(.systemGray))
                             }
                         }
                     }
@@ -374,7 +374,7 @@ struct TodayView: View {
                                     .foregroundColor(.orange)
                                 Text(placeName)
                                     .font(.subheadline)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(Color(.systemGray))
                             }
                         }
                     }

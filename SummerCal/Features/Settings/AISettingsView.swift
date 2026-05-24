@@ -3,6 +3,7 @@ import SwiftUI
 struct AISettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = SettingsViewModel()
+    @State private var showSaveConfirmation = false
 
     private let providers = [
         ("openAI", "OpenAI", "brain.head.profile"),
@@ -22,8 +23,28 @@ struct AISettingsView: View {
         "custom": []
     ]
 
+    private var maxTokensFormatted: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        return formatter.string(from: NSNumber(value: viewModel.maxTokens)) ?? "\(viewModel.maxTokens)"
+    }
+
     var body: some View {
         Form {
+            if viewModel.apiKey.isEmpty && viewModel.settings?.aiProviderKind == "openAI" {
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Get Started with AI", systemImage: "sparkles")
+                            .font(.headline)
+                        Text("Connect an AI provider like OpenAI or DeepSeek to enable smart day planning, event preparation, and personalized suggestions.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
             Section {
                 Picker("Provider", selection: $viewModel.aiProviderKind) {
                     ForEach(providers, id: \.0) { provider in
@@ -34,6 +55,7 @@ struct AISettingsView: View {
                 Text("AI Provider")
             } footer: {
                 Text("Select the AI provider you want to use for planning and suggestions.")
+                    .foregroundColor(Color(.systemGray))
             }
 
             if viewModel.aiProviderKind == "custom" {
@@ -46,6 +68,7 @@ struct AISettingsView: View {
                     Text("Custom Endpoint")
                 } footer: {
                     Text("Enter the API base URL for your custom provider.")
+                        .foregroundColor(Color(.systemGray))
                 }
             }
 
@@ -73,10 +96,33 @@ struct AISettingsView: View {
                 Text("API Key")
             } footer: {
                 Text("Your API key is stored securely in the Keychain and never shared.")
+                    .foregroundColor(Color(.systemGray))
             }
 
             Section {
-                Stepper("Max Tokens: \(viewModel.maxTokens)", value: $viewModel.maxTokens, in: 256...4096, step: 256)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Max Tokens")
+                        Spacer()
+                        Text(maxTokensFormatted)
+                            .fontWeight(.medium)
+                            .foregroundColor(.orange)
+                    }
+                    Picker("", selection: $viewModel.maxTokens) {
+                        Text("256").tag(256)
+                        Text("512").tag(512)
+                        Text("1,024").tag(1024)
+                        Text("2,048").tag(2048)
+                        Text("4,096").tag(4096)
+                        Text("8,192").tag(8192)
+                    }
+                    .pickerStyle(.segmented)
+                }
+            } header: {
+                Text("Response Length")
+            } footer: {
+                Text("Higher values allow longer AI responses but consume more credits. 1,024 is recommended for most planning tasks.")
+                    .foregroundColor(Color(.systemGray))
             }
 
             Section {
@@ -100,24 +146,45 @@ struct AISettingsView: View {
                     }
                 }
                 .disabled(viewModel.apiKey.isEmpty || viewModel.isTestingConnection)
+            } footer: {
+                if viewModel.apiKey.isEmpty {
+                    Text("Enter your API key above to test the connection.")
+                        .foregroundColor(Color(.systemGray))
+                }
             }
 
             Section {
                 Button {
                     viewModel.saveSettings(modelContext: modelContext)
+                    showSaveConfirmation = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        showSaveConfirmation = false
+                    }
                 } label: {
                     HStack {
                         Spacer()
-                        Label("Save Settings", systemImage: "square.and.arrow.down")
-                            .fontWeight(.semibold)
+                        if showSaveConfirmation {
+                            Label("Saved", systemImage: "checkmark")
+                                .fontWeight(.semibold)
+                        } else {
+                            Label("Save Settings", systemImage: "square.and.arrow.down")
+                                .fontWeight(.semibold)
+                        }
                         Spacer()
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
+                .disabled(viewModel.apiKey.trimmingCharacters(in: .whitespaces).isEmpty)
+            } footer: {
+                if viewModel.apiKey.isEmpty {
+                    Text("Enter your API key to save.")
+                        .foregroundColor(Color(.systemGray))
+                }
             }
         }
         .navigationTitle("AI Settings")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             viewModel.loadSettings(modelContext: modelContext)
         }

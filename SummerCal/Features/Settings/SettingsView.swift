@@ -11,7 +11,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            aiConfigurationSection
+            aiSettingsSection
 
             notificationsSection
 
@@ -47,18 +47,18 @@ struct SettingsView: View {
         }
     }
 
-    private var aiConfigurationSection: some View {
+    private var aiSettingsSection: some View {
         Section {
             NavigationLink {
                 AISettingsView()
             } label: {
-                Label("AI Configuration", systemImage: "brain.head.profile")
+                Label("AI Settings", systemImage: "brain.head.profile")
             }
 
             HStack {
                 Text("Provider")
                 Spacer()
-                Text(viewModel.aiProviderKind.capitalized)
+                Text(providerDisplayName(viewModel.aiProviderKind))
                     .foregroundStyle(.secondary)
             }
             HStack {
@@ -69,7 +69,10 @@ struct SettingsView: View {
                     .lineLimit(1)
             }
         } header: {
-            Text("AI Configuration")
+            Text("AI Settings")
+                .font(.footnote)
+                .textCase(.uppercase)
+                .foregroundColor(.secondary)
         }
     }
 
@@ -80,17 +83,27 @@ struct SettingsView: View {
             }
         } header: {
             Text("Notifications")
+                .font(.footnote)
+                .textCase(.uppercase)
+                .foregroundColor(.secondary)
         }
     }
 
     private var locationSection: some View {
         Section {
             Toggle("Enable Location", isOn: $viewModel.locationEnabled)
-            if viewModel.locationEnabled {
-                Toggle("Approximate Location", isOn: $viewModel.approximateLocation)
-            }
+                .sensoryFeedback(.impact, trigger: viewModel.locationEnabled)
+                .padding(.vertical, 4)
+
+            Toggle("Approximate Location", isOn: $viewModel.approximateLocation)
+                .disabled(!viewModel.locationEnabled)
+                .opacity(viewModel.locationEnabled ? 1.0 : 0.4)
+                .padding(.vertical, 4)
         } header: {
             Text("Location")
+                .font(.footnote)
+                .textCase(.uppercase)
+                .foregroundColor(.secondary)
         } footer: {
             if !viewModel.locationEnabled {
                 Text("Location is used for weather and nearby place suggestions.")
@@ -130,10 +143,16 @@ struct SettingsView: View {
                             .padding(.vertical, 8)
                             .background(
                                 viewModel.selectedActivities.contains(activity.id)
-                                    ? Color.orange.opacity(0.15)
-                                    : Color(.systemGray6)
+                                    ? Color.orange.opacity(0.12) : Color(.systemGray6)
                             )
                             .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(
+                                        viewModel.selectedActivities.contains(activity.id)
+                                            ? Color.orange : Color.clear, lineWidth: 1.5
+                                    )
+                            )
                         }
                         .buttonStyle(.plain)
                     }
@@ -152,6 +171,7 @@ struct SettingsView: View {
                 }
                 Slider(value: $viewModel.energyLevel, in: 1...5, step: 1)
                     .tint(.orange)
+                    .sensoryFeedback(.selection, trigger: viewModel.energyLevel)
                 HStack {
                     Text("Low")
                         .font(.caption2)
@@ -170,6 +190,9 @@ struct SettingsView: View {
             }
         } header: {
             Text("Preferences")
+                .font(.footnote)
+                .textCase(.uppercase)
+                .foregroundColor(.secondary)
         }
     }
 
@@ -182,15 +205,26 @@ struct SettingsView: View {
             }
 
             HStack {
-                Text("Monthly Income Goal")
+                Text("Monthly Goal")
                 Spacer()
-                TextField("0", value: $viewModel.monthlyIncomeGoal, format: .number)
-                    .keyboardType(.decimalPad)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 100)
+                if viewModel.monthlyIncomeGoal > 0 {
+                    TextField("0", value: $viewModel.monthlyIncomeGoal, format: .currency(code: viewModel.currencyCode))
+                        .keyboardType(.decimalPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 120)
+                } else {
+                    Button("Set Goal") {
+                        viewModel.monthlyIncomeGoal = 1000
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.orange)
+                }
             }
         } header: {
             Text("Currency & Goals")
+                .font(.footnote)
+                .textCase(.uppercase)
+                .foregroundColor(.secondary)
         }
     }
 
@@ -214,6 +248,9 @@ struct SettingsView: View {
             }
         } header: {
             Text("About")
+                .font(.footnote)
+                .textCase(.uppercase)
+                .foregroundColor(.secondary)
         }
     }
 
@@ -259,15 +296,24 @@ struct SettingsView: View {
             Button(role: .destructive) {
                 showResetConfirmation = true
             } label: {
-                HStack {
-                    Spacer()
-                    Label("Reset All Data", systemImage: "trash")
-                        .fontWeight(.medium)
-                    Spacer()
-                }
+                Label("Reset All Data", systemImage: "trash")
+                    .foregroundColor(.red)
             }
         } footer: {
-            Text("This will delete all data including events, settings, income, and weather data.")
+            Text("⚠️ This permanently deletes ALL your data. This action cannot be undone.")
+                .foregroundColor(.red.opacity(0.8))
+        }
+    }
+
+    private func providerDisplayName(_ kind: String) -> String {
+        switch kind {
+        case "openAI": return "OpenAI"
+        case "anthropic": return "Anthropic"
+        case "google": return "Google AI"
+        case "deepSeek": return "DeepSeek"
+        case "mistral": return "Mistral AI"
+        case "custom": return "Custom"
+        default: return kind.capitalized
         }
     }
 }

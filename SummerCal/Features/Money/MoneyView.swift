@@ -33,13 +33,13 @@ struct MoneyView: View {
                     Text("Entries")
                     Spacer()
                     Text("\(viewModel.incomeEntries.count)")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.systemGray))
                 }
                 HStack {
                     Text("Work Sessions")
                     Spacer()
                     Text("\(viewModel.workSessions.count)")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.systemGray))
                 }
             }
 
@@ -141,6 +141,7 @@ struct MoneyView: View {
                 Image(systemName: "chevron.left")
                     .font(.caption.weight(.medium))
             }
+            .frame(minWidth: 44, minHeight: 44)
 
             Text(viewModel.monthLabel)
                 .font(.caption.weight(.medium))
@@ -152,6 +153,7 @@ struct MoneyView: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.medium))
             }
+            .frame(minWidth: 44, minHeight: 44)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -165,7 +167,7 @@ struct MoneyView: View {
                     VStack(alignment: .leading) {
                         Text("Total Gross")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.systemGray))
                         Text(viewModel.formatCurrency(viewModel.totalGross))
                             .font(.title)
                             .fontWeight(.bold)
@@ -180,7 +182,7 @@ struct MoneyView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Work Earnings")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.systemGray))
                         Text(viewModel.formatCurrency(viewModel.totalWorkEarnings))
                             .font(.subheadline)
                             .fontWeight(.medium)
@@ -189,7 +191,7 @@ struct MoneyView: View {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("Income Entries")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.systemGray))
                         Text(viewModel.formatCurrency(viewModel.totalIncome))
                             .font(.subheadline)
                             .fontWeight(.medium)
@@ -206,7 +208,7 @@ struct MoneyView: View {
                 HStack {
                     Text("Monthly Goal")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.systemGray))
                     Spacer()
                     Text("\(viewModel.formatCurrency(viewModel.totalGross)) / \(viewModel.formattedGoal)")
                         .font(.caption)
@@ -219,7 +221,7 @@ struct MoneyView: View {
                 HStack {
                     Text("\(Int(viewModel.goalProgress * 100))% complete")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.systemGray))
                     Spacer()
                     if viewModel.goalProgress >= 1.0 {
                         Label("Goal reached!", systemImage: "checkmark.circle.fill")
@@ -247,12 +249,12 @@ struct MoneyView: View {
                 if !entry.descriptionText.isEmpty {
                     Text(entry.descriptionText)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.systemGray))
                         .lineLimit(1)
                 }
                 Text(viewModel.formatDate(entry.date))
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color(.systemGray3))
             }
 
             Spacer()
@@ -263,6 +265,7 @@ struct MoneyView: View {
                 .foregroundColor(.green)
         }
         .padding(.vertical, 2)
+        .frame(minHeight: 44)
     }
 
     private func workSessionRow(_ session: WorkSession) -> some View {
@@ -282,17 +285,17 @@ struct MoneyView: View {
                         .font(.caption)
                     Text("at \(viewModel.formatCurrency(session.hourlyRate))/h")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.systemGray))
                 }
                 if !session.descriptionText.isEmpty {
                     Text(session.descriptionText)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.systemGray))
                         .lineLimit(1)
                 }
                 Text(viewModel.formatDate(session.date))
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color(.systemGray3))
             }
 
             Spacer()
@@ -303,6 +306,7 @@ struct MoneyView: View {
                 .foregroundColor(.blue)
         }
         .padding(.vertical, 2)
+        .frame(minHeight: 44)
     }
 
     private func categoryIcon(_ cat: IncomeCategory) -> String {
@@ -325,17 +329,23 @@ struct MoneyView: View {
                     }
                 } header: {
                     Text("Currency")
+                        .font(.footnote)
+                        .textCase(.uppercase)
+                        .foregroundColor(Color(.systemGray))
                 }
 
                 Section {
                     HStack {
                         Text(settingsCurrency)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.systemGray))
                         TextField("Goal", text: $settingsGoalText)
                             .keyboardType(.numberPad)
                     }
                 } header: {
                     Text("Monthly Income Goal")
+                        .font(.footnote)
+                        .textCase(.uppercase)
+                        .foregroundColor(Color(.systemGray))
                 } footer: {
                     Text("Set a target to track your progress throughout the month.")
                 }

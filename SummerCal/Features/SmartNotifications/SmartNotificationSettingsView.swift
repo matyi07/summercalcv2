@@ -26,7 +26,7 @@ struct SmartNotificationSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Notification Types") {
+            Section {
                 ForEach(viewModel.rules, id: \.kind) { rule in
                     HStack {
                         VStack(alignment: .leading) {
@@ -34,7 +34,7 @@ struct SmartNotificationSettingsView: View {
                                 .font(.body)
                             Text(rule.kind.description)
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Color(.systemGray))
                         }
                         Spacer()
                         Toggle("", isOn: Binding(
@@ -44,7 +44,13 @@ struct SmartNotificationSettingsView: View {
                             }
                         ))
                     }
+                    .frame(minHeight: 44)
                 }
+            } header: {
+                Text("Notification Types")
+                    .font(.footnote)
+                    .textCase(.uppercase)
+                    .foregroundColor(Color(.systemGray))
             }
 
             Section {
@@ -53,14 +59,19 @@ struct SmartNotificationSettingsView: View {
                         let hour = Calendar.current.component(.hour, from: newValue)
                         viewModel.updateQuietHours(start: hour, end: Calendar.current.component(.hour, from: quietHoursEnd), modelContext: modelContext)
                     }
+                    .sensoryFeedback(.selection, trigger: quietHoursStart)
 
                 DatePicker("End", selection: $quietHoursEnd, displayedComponents: .hourAndMinute)
                     .onChange(of: quietHoursEnd) { _, newValue in
                         let hour = Calendar.current.component(.hour, from: newValue)
                         viewModel.updateQuietHours(start: Calendar.current.component(.hour, from: quietHoursStart), end: hour, modelContext: modelContext)
                     }
+                    .sensoryFeedback(.selection, trigger: quietHoursEnd)
             } header: {
                 Text("Quiet Hours")
+                    .font(.footnote)
+                    .textCase(.uppercase)
+                    .foregroundColor(Color(.systemGray))
             } footer: {
                 Text("Notifications will not be sent during these hours.")
             }
@@ -81,8 +92,12 @@ struct SmartNotificationSettingsView: View {
                         let minute = Calendar.current.component(.minute, from: newValue)
                         viewModel.updateFreeDayCheck(hour: hour, minute: minute, modelContext: modelContext)
                     }
+                    .sensoryFeedback(.selection, trigger: freeDayCheckTime)
             } header: {
                 Text("Free Day")
+                    .font(.footnote)
+                    .textCase(.uppercase)
+                    .foregroundColor(Color(.systemGray))
             } footer: {
                 Text("How many free hours qualify as a free day, and when to check.")
             }
@@ -106,8 +121,12 @@ struct SmartNotificationSettingsView: View {
                     .onChange(of: dailyWeatherSummary) { _, newValue in
                         viewModel.updateDailyWeatherSummary(newValue, modelContext: modelContext)
                     }
+                    .frame(minHeight: 44)
             } header: {
                 Text("Limits")
+                    .font(.footnote)
+                    .textCase(.uppercase)
+                    .foregroundColor(Color(.systemGray))
             }
 
             Section {
@@ -129,11 +148,16 @@ struct SmartNotificationSettingsView: View {
                     HStack {
                         if viewModel.isScheduling {
                             ProgressView()
+                                .tint(.white)
                         }
                         Text("Schedule Notifications Now")
+                            .font(.headline)
                     }
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
                 .disabled(viewModel.isScheduling)
 
                 if let error = viewModel.scheduleError {
@@ -142,13 +166,16 @@ struct SmartNotificationSettingsView: View {
                         .foregroundColor(.red)
                 }
 
-                Button {
-                    showLogs = true
+                NavigationLink {
+                    notificationLogView
                 } label: {
                     Label("View Notification Log", systemImage: "list.bullet.rectangle")
                 }
             } header: {
                 Text("Actions")
+                    .font(.footnote)
+                    .textCase(.uppercase)
+                    .foregroundColor(Color(.systemGray))
             }
         }
         .navigationTitle("Smart Notifications")
@@ -156,11 +183,6 @@ struct SmartNotificationSettingsView: View {
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { dismiss() }
-            }
-        }
-        .sheet(isPresented: $showLogs) {
-            NavigationStack {
-                notificationLogView
             }
         }
         .onAppear {
@@ -190,7 +212,7 @@ struct SmartNotificationSettingsView: View {
         List {
             if viewModel.notificationLogs.isEmpty {
                 Text("No notifications logged yet")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(.systemGray))
             }
             ForEach(viewModel.notificationLogs) { log in
                 VStack(alignment: .leading, spacing: 4) {
@@ -198,7 +220,7 @@ struct SmartNotificationSettingsView: View {
                         .font(.headline)
                     Text(log.body)
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                     HStack {
                         Text(log.kind.displayName)
                             .font(.caption)
@@ -207,7 +229,7 @@ struct SmartNotificationSettingsView: View {
                             .background(Capsule().fill(Color.blue.opacity(0.15)))
                         Text(log.scheduledFor, style: .relative)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Color(.systemGray))
                     }
                 }
                 .padding(.vertical, 4)

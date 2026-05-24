@@ -10,6 +10,7 @@ struct AddWorkSessionView: View {
     @State private var endTime: Date = Calendar.current.date(bySettingHour: 17, minute: 0, second: 0, of: Date()) ?? Date()
     @State private var hourlyRateText: String = ""
     @State private var note: String = ""
+    @State private var rateErrorTrigger: Bool = false
 
     var onSave: (() -> Void)?
 
@@ -49,9 +50,15 @@ struct AddWorkSessionView: View {
                 Section {
                     HStack {
                         Text(currencyCode)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.systemGray))
                         TextField("Hourly Rate", text: $hourlyRateText)
                             .keyboardType(.decimalPad)
+                            .onChange(of: hourlyRateText) { _, newValue in
+                                let cleaned = newValue.replacingOccurrences(of: ",", with: ".")
+                                if !newValue.isEmpty && (Double(cleaned) ?? 0) <= 0 {
+                                    rateErrorTrigger.toggle()
+                                }
+                            }
                     }
                 }
 
@@ -65,7 +72,7 @@ struct AddWorkSessionView: View {
                         Text("Duration")
                         Spacer()
                         Text(formatDuration)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.systemGray))
                     }
 
                     if isValid {
@@ -79,6 +86,7 @@ struct AddWorkSessionView: View {
                     }
                 }
             }
+            .sensoryFeedback(.error, trigger: rateErrorTrigger)
             .navigationTitle("Add Work Session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

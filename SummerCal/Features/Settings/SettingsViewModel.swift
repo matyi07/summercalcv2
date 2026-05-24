@@ -24,11 +24,15 @@ final class SettingsViewModel {
     var currencyCode: String = "USD"
     var monthlyIncomeGoal: Double = 0
 
+    var hasValidAPIKey: Bool {
+        !apiKey.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     let availableActivities: [(id: String, label: String, icon: String)] = [
         ("indoor", "Indoor", "house"),
         ("outdoor", "Outdoor", "leaf"),
-        ("low-cost", "Low Cost", "dollarsign.circle"),
-        ("productive", "Productive", "checkmark.circle"),
+        ("low-cost", "Budget Friendly", "dollarsign.circle"),
+        ("productive", "Deep Work", "checkmark.circle"),
         ("social", "Social", "person.2"),
         ("relaxing", "Relaxing", "bed.double"),
         ("fitness", "Fitness", "figure.walk"),
@@ -44,7 +48,7 @@ final class SettingsViewModel {
         aiProviderKind = s.aiProviderKind
         aiModelName = s.aiModelName
         aiBaseURL = s.aiBaseURL ?? ""
-        maxTokens = 1024
+        maxTokens = s.aiMaxTokens
         currencyCode = s.currencyCode
         monthlyIncomeGoal = s.monthlyIncomeGoal ?? 0
 
@@ -70,6 +74,7 @@ final class SettingsViewModel {
         s.aiProviderKind = aiProviderKind
         s.aiModelName = aiModelName
         s.aiBaseURL = aiBaseURL.isEmpty ? nil : aiBaseURL
+        s.aiMaxTokens = maxTokens
         s.currencyCode = currencyCode
         s.monthlyIncomeGoal = monthlyIncomeGoal
         s.updatedAt = Date()

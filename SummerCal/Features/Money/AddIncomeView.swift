@@ -11,6 +11,7 @@ struct AddIncomeView: View {
     @State private var note: String = ""
     @State private var category: IncomeCategory = .other
     @State private var isRecurring: Bool = false
+    @State private var amountErrorTrigger: Bool = false
 
     var onSave: (() -> Void)?
 
@@ -37,9 +38,15 @@ struct AddIncomeView: View {
                 Section {
                     HStack {
                         Text(currencyCode)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.systemGray))
                         TextField("Amount", text: $amountText)
                             .keyboardType(.decimalPad)
+                            .onChange(of: amountText) { _, newValue in
+                                let cleaned = newValue.replacingOccurrences(of: ",", with: ".")
+                                if !newValue.isEmpty && (Double(cleaned) ?? 0) <= 0 {
+                                    amountErrorTrigger.toggle()
+                                }
+                            }
                     }
 
                     Picker("Category", selection: $category) {
@@ -73,6 +80,7 @@ struct AddIncomeView: View {
                     }
                 }
             }
+            .sensoryFeedback(.error, trigger: amountErrorTrigger)
             .navigationTitle("Add Income")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

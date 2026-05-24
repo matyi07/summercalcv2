@@ -61,6 +61,7 @@ struct CalendarView: View {
                     .font(.headline)
                     .foregroundColor(.orange)
             }
+            .frame(minWidth: 44, minHeight: 44)
             .padding(.leading)
 
             Spacer()
@@ -77,6 +78,7 @@ struct CalendarView: View {
                     .font(.headline)
                     .foregroundColor(.orange)
             }
+            .frame(minWidth: 44, minHeight: 44)
             .padding(.trailing)
         }
         .padding(.vertical, 8)
@@ -87,7 +89,7 @@ struct CalendarView: View {
             ForEach(viewModel.weekdayHeaders, id: \.self) { day in
                 Text(day)
                     .font(.caption.weight(.medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(.systemGray))
                     .frame(maxWidth: .infinity)
             }
         }
@@ -116,7 +118,7 @@ struct CalendarView: View {
             VStack(spacing: 4) {
                 Text("\(dayNumber)")
                     .font(.callout.weight(isToday ? .bold : .regular))
-                    .foregroundColor(inCurrentMonth ? (isToday ? .white : .primary) : .secondary)
+                    .foregroundColor(inCurrentMonth ? (isToday ? .white : .primary) : Color(.systemGray3))
                     .frame(width: 32, height: 32)
                     .background(
                         Group {
@@ -144,10 +146,10 @@ struct CalendarView: View {
                     VStack(spacing: 8) {
                         Image(systemName: "calendar.badge.plus")
                             .font(.title2)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Color(.systemGray))
                         Text("No events")
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Color(.systemGray))
                     }
                     .padding(.vertical, 20)
                     Spacer()
@@ -181,14 +183,15 @@ struct CalendarView: View {
                 if event.isAllDay {
                     Text("All Day")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                 } else {
                     Text("\(event.startDate, style: .time) – \(event.endDate, style: .time)")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(.systemGray))
                 }
             }
         }
+        .frame(minHeight: 44)
         .padding(.vertical, 4)
     }
 

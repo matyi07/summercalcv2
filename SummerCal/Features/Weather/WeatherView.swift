@@ -42,7 +42,7 @@ struct WeatherView: View {
 
             Text("Enable location access to see weather for your area.")
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.systemGray))
                 .padding(.horizontal, 40)
 
             Button("Open Settings") {
@@ -152,12 +152,12 @@ struct WeatherView: View {
                     if let feelsLike = weather.feelsLikeCelsius {
                         Text("Feels like \(viewModel.formattedTemperature(feelsLike))")
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.systemGray))
                     }
 
                     Text(weather.summary)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.systemGray))
                         .multilineTextAlignment(.center)
                         .padding(.top, 2)
                 }
@@ -170,7 +170,7 @@ struct WeatherView: View {
                     ProgressView()
                     Text("Fetching weather...")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.systemGray))
                 }
                 .padding(40)
                 .frame(maxWidth: .infinity)
@@ -238,7 +238,7 @@ struct WeatherView: View {
                 .fontWeight(.semibold)
             Text(label)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color(.systemGray))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
@@ -258,7 +258,7 @@ struct WeatherView: View {
                                 VStack(spacing: 6) {
                                     Text(hourLabel(for: snapshot.forecastDate))
                                         .font(.caption2)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(Color(.systemGray))
 
                                     Image(systemName: viewModel.weatherIcon(for: snapshot.condition))
                                         .font(.title3)
@@ -276,7 +276,7 @@ struct WeatherView: View {
                                     } else {
                                         Text("--")
                                             .font(.caption2)
-                                            .foregroundStyle(.tertiary)
+                                            .foregroundStyle(Color(.systemGray3))
                                     }
                                 }
                                 .padding(.vertical, 8)
@@ -329,12 +329,12 @@ struct WeatherView: View {
                                             .fontWeight(.medium)
                                         Text("L:\(String(format: "%.0f", low))°")
                                             .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(Color(.systemGray))
                                     }
                                 } else {
                                     Text(day.summary)
                                         .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(Color(.systemGray))
                                         .lineLimit(1)
                                 }
 
@@ -370,12 +370,14 @@ struct WeatherView: View {
                     Toggle("Rain Alert", isOn: $viewModel.rainAlertEnabled)
                         .font(.subheadline)
                 }
+                .frame(minHeight: 44)
                 if viewModel.rainAlertEnabled {
                     HStack {
                         Text("Threshold")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.systemGray))
                         Slider(value: $viewModel.rainThreshold, in: 0...1, step: 0.05)
+                            .sensoryFeedback(.selection, trigger: viewModel.rainThreshold)
                         Text("\(Int(viewModel.rainThreshold * 100))%")
                             .font(.caption)
                             .monospacedDigit()
@@ -389,12 +391,14 @@ struct WeatherView: View {
                     Toggle("Heat Alert", isOn: $viewModel.heatAlertEnabled)
                         .font(.subheadline)
                 }
+                .frame(minHeight: 44)
                 if viewModel.heatAlertEnabled {
                     HStack {
                         Text("Threshold")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.systemGray))
                         Slider(value: $viewModel.heatThreshold, in: 20...50, step: 1)
+                            .sensoryFeedback(.selection, trigger: viewModel.heatThreshold)
                         Text(viewModel.formattedTemperature(viewModel.heatThreshold))
                             .font(.caption)
                             .monospacedDigit()
@@ -408,12 +412,14 @@ struct WeatherView: View {
                     Toggle("Cold Alert", isOn: $viewModel.coldAlertEnabled)
                         .font(.subheadline)
                 }
+                .frame(minHeight: 44)
                 if viewModel.coldAlertEnabled {
                     HStack {
                         Text("Threshold")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(.systemGray))
                         Slider(value: $viewModel.coldThreshold, in: -20...15, step: 1)
+                            .sensoryFeedback(.selection, trigger: viewModel.coldThreshold)
                         Text(viewModel.formattedTemperature(viewModel.coldThreshold))
                             .font(.caption)
                             .monospacedDigit()
