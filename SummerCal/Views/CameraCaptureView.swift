@@ -13,40 +13,8 @@ struct CameraCaptureView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.delegate = context.coordinator
-
-        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
-            DispatchQueue.main.async {
-                errorMessage = "Camera not available on this device."
-                dismiss()
-            }
-            return picker
-        }
-
-        let status = AVCaptureDevice.authorizationStatus(for: .video)
-        switch status {
-        case .authorized:
-            picker.sourceType = .camera
-            picker.cameraCaptureMode = .photo
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                DispatchQueue.main.async {
-                    if granted {
-                        picker.sourceType = .camera
-                        picker.cameraCaptureMode = .photo
-                    } else {
-                        errorMessage = "Camera access denied."
-                        dismiss()
-                    }
-                }
-            }
-        case .denied, .restricted:
-            DispatchQueue.main.async {
-                errorMessage = "Camera access denied. Enable it in Settings."
-                dismiss()
-            }
-        @unknown default:
-            break
-        }
+        picker.sourceType = .camera
+        picker.cameraCaptureMode = .photo
         return picker
     }
 

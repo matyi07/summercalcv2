@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import PhotosUI
 import UIKit
+import AVFoundation
 
 struct AddExpenseView: View {
     @Environment(\.dismiss) private var dismiss
@@ -141,7 +142,7 @@ struct AddExpenseView: View {
                     scanError = nil
                 }
             }
-            .fullScreenCover(isPresented: $showCamera) {
+            .sheet(isPresented: $showCamera) {
                 CameraCaptureView(
                     capturedImage: $capturedUIImage,
                     errorMessage: $scanError
@@ -202,7 +203,7 @@ struct AddExpenseView: View {
 
             HStack(spacing: 16) {
                 Button {
-                    showCamera = true
+                    requestCameraAndShow()
                 } label: {
                     VStack(spacing: 6) {
                         Image(systemName: "camera.fill").font(.title2)
@@ -299,6 +300,29 @@ struct AddExpenseView: View {
         case "transfer": return "arrow.left.arrow.right"
         case "direct debit": return "arrow.down.forward"
         default: return "creditcard"
+        }
+    }
+
+    private func requestCameraAndShow() {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            scanError = "Camera not available on this device."
+            return
+        }
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+        switch status {
+        case .authorized:
+            showCamera = true
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                DispatchQueue.main.async {
+                    if granted { showCamera = true }
+                    else { scanError = "Camera access denied." }
+                }
+            }
+        case .denied, .restricted:
+            scanError = "Camera access denied. Enable in Settings."
+        @unknown default:
+            scanError = "Camera unavailable."
         }
     }
 

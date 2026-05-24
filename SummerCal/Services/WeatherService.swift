@@ -122,14 +122,12 @@ final class WeatherService: ObservableObject {
         if let aqi = try? await fetchAirPollution(latitude: coordinate.latitude, longitude: coordinate.longitude, key: key) {
             await MainActor.run {
                 self.currentSnapshot?.airQualityIndex = aqi
-                try? context.save()
             }
         }
 
         context.insert(currentSnapshot)
         for h in hourly { context.insert(h) }
         for d in daily { context.insert(d) }
-        try? context.save()
 
         return (currentSnapshot, hourly, daily)
     }

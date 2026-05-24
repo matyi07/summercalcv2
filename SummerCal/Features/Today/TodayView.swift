@@ -11,6 +11,7 @@ struct TodayView: View {
     @State private var showAddEvent = false
     @State private var isRefreshing = false
     @State private var weatherFetched = false
+    @State private var lastWeatherFetch: Date = .distantPast
     @State private var selectedSuggestion: ActivitySuggestion?
 
     @Query(sort: \CalendarEvent.startDate) private var allEvents: [CalendarEvent]
@@ -83,9 +84,12 @@ struct TodayView: View {
         }
         .onChange(of: locationService.currentCoordinate) { _, coord in
             guard let coord = coord else { return }
+            let now = Date()
+            guard now.timeIntervalSince(lastWeatherFetch) > 900 else { return }
             Task {
                 let settings = UserSettings.current(in: modelContext)
                 _ = try? await weatherService.fetchWeather(for: coord, jwt: settings.weatherKitJWT, context: modelContext)
+                lastWeatherFetch = Date()
                 await viewModel.loadDay(modelContext: modelContext)
             }
         }

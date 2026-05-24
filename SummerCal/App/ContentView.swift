@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import GoogleMaps
 
 struct ContentView: View {
     @EnvironmentObject private var router: AppRouter
@@ -59,6 +60,9 @@ struct ContentView: View {
         }
         .task {
             locationService.requestWhenInUsePermission()
+        }
+        .task(priority: .background) {
+            GMSServices.provideAPIKey(GoogleAPI.defaultKey)
         }
     }
 

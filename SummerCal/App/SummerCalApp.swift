@@ -1,11 +1,11 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
-import GoogleMaps
 
 @main
 struct SummerCalApp: App {
     @State private var appRouter = AppRouter()
+    @State private var mapsInitialized = false
 
     private let modelContainer: ModelContainer = {
         let schema = Schema([
@@ -37,9 +37,7 @@ struct SummerCalApp: App {
         }
     }()
 
-    init() {
-        GMSServices.provideAPIKey(GoogleAPI.defaultKey)
-    }
+    init() {}
 
     var body: some Scene {
         WindowGroup {
