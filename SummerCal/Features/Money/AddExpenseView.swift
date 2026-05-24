@@ -148,7 +148,7 @@ struct AddExpenseView: View {
 
     private var receiptSection: some View {
         Section {
-            if let receiptData, let uiImage = UIImage(data: receiptData) {
+            if _receiptData.wrappedValue != nil, let uiImage = UIImage(data: _receiptData.wrappedValue!) {
                 VStack(spacing: 8) {
                     Image(uiImage: uiImage)
                         .resizable()
@@ -192,9 +192,9 @@ struct AddExpenseView: View {
                     .buttonStyle(.plain)
                 }
             }
-            if let receiptData, !scanCompleted, !isScanning {
+            if _receiptData.wrappedValue != nil, !scanCompleted, !isScanning {
                 Button {
-                    Task { await scanReceipt(imageData: receiptData) }
+                    Task { await scanReceipt(imageData: _receiptData.wrappedValue!) }
                 } label: {
                     Label("Scan Receipt with AI", systemImage: "text.viewfinder")
                 }
