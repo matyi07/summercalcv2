@@ -65,9 +65,31 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
     var errorMessage: String?
     var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
     var currentLocationName: String?
+    var selectedMapStyle: MapStyleOption = .standard
+
+    enum MapStyleOption: String, CaseIterable, Identifiable {
+        case standard, satellite, hybrid
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .standard: return "Standard"
+            case .satellite: return "Satellite"
+            case .hybrid: return "Hybrid"
+            }
+        }
+        var icon: String {
+            switch self {
+            case .standard: return "map"
+            case .satellite: return "globe"
+            case .hybrid: return "map.fill"
+            }
+        }
+    }
 
     private let locationManager = CLLocationManager()
     var currentCoordinate: CLLocationCoordinate2D?
+    private var placesService: PlacesService?
+    private var hasInitialLocation = false
 
     override init() {
         super.init()
@@ -75,11 +97,21 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
         locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
     }
 
+    func configurePlacesService(with googleApiKey: String?) {
+        // Only create once and re-create if key changes
+        if placesService == nil || googleApiKey != nil {
+            placesService = PlacesService(googleApiKey: googleApiKey)
+        }
+    }
+
     func requestLocation() {
         locationManager.requestWhenInUseAuthorization()
     }
 
     func loadSavedPlaces(modelContext: ModelContext) {
+        let settings = UserSettings.current(in: modelContext)
+        configurePlacesService(with: settings.googlePlacesAPIKey)
+
         let descriptor = FetchDescriptor<PlaceCandidate>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
         savedPlaces = (try? modelContext.fetch(descriptor)) ?? []
         if selectedCategory == .all && searchText.isEmpty {
@@ -125,65 +157,47 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
             keyword = searchText
         }
 
-        let latitude = coordinate.latitude
-        let longitude = coordinate.longitude
+        let coord = Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
 
-        let urlString = "https://nominatim.openstreetmap.org/search?q=\(keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? keyword)&format=json&limit=20&lat=\(latitude)&lon=\(longitude)&bounded=1&addressdetails=1"
-        guard let url = URL(string: urlString) else {
+        // Use PlacesService (Google/MapKit) instead of Nominatim
+        guard let service = placesService else {
             isLoading = false
-            errorMessage = "Invalid search URL"
+            errorMessage = "Search service not configured"
             return
         }
 
-        do {
-            var request = URLRequest(url: url)
-            request.setValue("SummerCal/2.0", forHTTPHeaderField: "User-Agent")
-            let (data, _) = try await URLSession.shared.data(for: request)
+        await service.searchNearby(query: keyword, coordinate: coord, radiusMeters: 5000)
 
-            guard let results = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+        await MainActor.run {
+            if service.error != nil {
+                errorMessage = service.error
+            }
+            var fetched = service.results
+            if fetched.isEmpty && !searchText.isEmpty {
+                // No results, keep showing saved places
+                applyFilters()
                 isLoading = false
-                errorMessage = "Unexpected response format"
                 return
             }
-
-            var fetched: [PlaceCandidate] = []
-            for item in results {
-                guard let name = item["display_name"] as? String else { continue }
-                let shortName = name.components(separatedBy: ",").first?.trimmingCharacters(in: .whitespaces) ?? name
-                let lat = Double(item["lat"] as? String ?? "") ?? 0
-                let lon = Double(item["lon"] as? String ?? "") ?? 0
-
-                let categoryName = (item["type"] as? String) ?? item["category"] as? String
-
-                let placeLoc = CLLocation(latitude: lat, longitude: lon)
-                let currentLoc = CLLocation(latitude: latitude, longitude: longitude)
-                let distance = placeLoc.distance(from: currentLoc)
-
-                let place = PlaceCandidate(
-                    name: shortName,
-                    category: categoryName,
-                    address: name,
-                    latitude: lat,
-                    longitude: lon,
-                    openNow: nil,
-                    rating: nil,
-                    distanceMeters: distance
-                )
-                fetched.append(place)
-
-                if let idx = savedPlaces.firstIndex(where: { $0.id == place.id }) {
-                    continue
+            // Save newly fetched places
+            for place in fetched {
+                if !savedPlaces.contains(where: { $0.placeId == place.placeId && place.placeId != nil }) {
+                    modelContext.insert(place)
                 }
-                modelContext.insert(place)
             }
             try? modelContext.save()
 
-            placeResults = fetched
-        } catch {
-            errorMessage = error.localizedDescription
+            // Merge with saved places for this query
+            var results = fetched
+            for saved in savedPlaces {
+                if !results.contains(where: { $0.placeId == saved.placeId && saved.placeId != nil }) {
+                    results.append(saved)
+                }
+            }
+            placeResults = results
+            savedPlaces = results
+            isLoading = false
         }
-
-        isLoading = false
     }
 
     func deletePlace(_ place: PlaceCandidate, modelContext: ModelContext) {
@@ -213,6 +227,8 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
         return "mappin"
     }
 
+    // MARK: - CLLocationManagerDelegate
+
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         locationAuthorizationStatus = manager.authorizationStatus
         switch manager.authorizationStatus {
@@ -229,7 +245,16 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         currentCoordinate = location.coordinate
-        manager.stopUpdatingLocation()
+
+        // Only stop after first fix to avoid battery drain — restart if map view is active
+        if !hasInitialLocation {
+            hasInitialLocation = true
+            manager.stopUpdatingLocation()
+        }
+        if isMapView && hasInitialLocation {
+            // Keep updating in map mode, but throttle
+            manager.distanceFilter = 100
+        }
 
         let geocoder = CLGeocoder()
         geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, _ in

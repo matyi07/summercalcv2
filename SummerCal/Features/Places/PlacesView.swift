@@ -60,7 +60,7 @@ struct PlacesView: View {
 
     private var searchAndFilterBar: some View {
         VStack(spacing: 8) {
-            HStack {
+            HStack(spacing: 8) {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(Color(.systemGray))
@@ -124,28 +124,106 @@ struct PlacesView: View {
     }
 
     private var mapContent: some View {
-        Map(position: $cameraPosition) {
-            ForEach(viewModel.placeResults) { place in
-                Marker(place.name, coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude))
-                    .tint(.orange)
+        ZStack(alignment: .topTrailing) {
+            Map(position: $cameraPosition) {
+                // Place markers with annotation callouts
+                ForEach(viewModel.placeResults) { place in
+                    Annotation(place.name, coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)) {
+                        VStack(spacing: 0) {
+                            ZStack {
+                                Circle()
+                                    .fill(.orange)
+                                    .frame(width: 32, height: 32)
+                                Image(systemName: viewModel.categoryIcon(for: place.category))
+                                    .font(.caption)
+                                    .foregroundColor(.white)
+                            }
+
+                            Image(systemName: "arrowtriangle.down.fill")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                                .offset(y: -3)
+                        }
+                        .onTapGesture {
+                            selectedPlace = place
+                            showDetail = true
+                        }
+                    }
+                }
+                if let coord = viewModel.currentCoordinate {
+                    Annotation("You", coordinate: coord) {
+                        ZStack {
+                            Circle()
+                                .fill(.blue)
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "person.circle.fill")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
             }
-            if let coord = viewModel.currentCoordinate {
-                Marker("You", systemImage: "person.circle.fill", coordinate: coord)
-                    .tint(.blue)
+            .mapStyle(mapStyleForOption(viewModel.selectedMapStyle))
+            .mapControls {
+                MapUserLocationButton()
+                MapCompass()
+                MapScaleView()
+            }
+            .onChange(of: viewModel.currentCoordinate?.latitude) { _, _ in
+                panToCurrentLocation()
+            }
+            .onChange(of: viewModel.currentCoordinate?.longitude) { _, _ in
+                panToCurrentLocation()
+            }
+
+            // Map style picker overlay
+            VStack(spacing: 4) {
+                Menu {
+                    ForEach(PlacesViewModel.MapStyleOption.allCases) { option in
+                        Button {
+                            viewModel.selectedMapStyle = option
+                        } label: {
+                            HStack {
+                                Label(option.label, systemImage: option.icon)
+                                if viewModel.selectedMapStyle == option {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: viewModel.selectedMapStyle.icon)
+                        Text(viewModel.selectedMapStyle.label)
+                            .font(.caption)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                }
+                .padding(.trailing, 8)
+                .padding(.top, 4)
             }
         }
-        .mapStyle(.standard)
-        .mapControls {
-            MapUserLocationButton()
+    }
+
+    private func panToCurrentLocation() {
+        if let coord = viewModel.currentCoordinate {
+            cameraPosition = .region(MKCoordinateRegion(
+                center: coord,
+                latitudinalMeters: 2000,
+                longitudinalMeters: 2000
+            ))
         }
-        .onChange(of: viewModel.currentCoordinate?.latitude) { _, _ in
-            if let coord = viewModel.currentCoordinate {
-                cameraPosition = .region(MKCoordinateRegion(
-                    center: coord,
-                    latitudinalMeters: 2000,
-                    longitudinalMeters: 2000
-                ))
-            }
+    }
+
+    private func mapStyleForOption(_ option: PlacesViewModel.MapStyleOption) -> some MapStyle {
+        switch option {
+        case .standard: return .standard
+        case .satellite: return .imagery
+        case .hybrid: return .hybrid
         }
     }
 
@@ -329,8 +407,10 @@ struct PlacesView: View {
 
                 Section {
                     Button {
-                        let url = URL(string: "http://maps.apple.com/?daddr=\(place.latitude),\(place.longitude)&dirflg=w")!
-                        UIApplication.shared.open(url)
+                        let urlString = "https://maps.apple.com/?daddr=\(place.latitude),\(place.longitude)&dirflg=w"
+                        if let url = URL(string: urlString) {
+                            UIApplication.shared.open(url)
+                        }
                     } label: {
                         Label("Navigate There", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
                             .frame(maxWidth: .infinity)
@@ -358,3 +438,5 @@ struct PlacesView: View {
         mapItem.openInMaps()
     }
 }
+
+// PlaceCandidate already conforms to Identifiable via SwiftData @Model

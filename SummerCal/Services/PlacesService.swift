@@ -174,21 +174,19 @@ final class GooglePlacesProvider: PlacesProvider {
 }
 
 final class PlacesService: ObservableObject {
-    private let googleAPIKey: String
+    private let googleApiKey: String?
     private let mapKitProvider: MapKitPlacesProvider
     private var googleProvider: GooglePlacesProvider?
-    private var preferGoogle: Bool
 
     @Published var isLoading = false
     @Published var results: [PlaceCandidate] = []
     @Published var error: String?
 
-    init(googleApiKey: String? = nil) {
-        let key = googleApiKey ?? "AIzaSyCchq9xvIlpqqkE2bdTUV8kc3ZadXZPVus"
-        self.googleAPIKey = key
+    /// Creates a PlacesService. Google API key should come from UserSettings — never hardcoded.
+    init(googleApiKey: String?) {
+        self.googleApiKey = (googleApiKey?.isEmpty == false) ? googleApiKey : nil
         self.mapKitProvider = MapKitPlacesProvider()
-        self.preferGoogle = !key.isEmpty
-        if !key.isEmpty {
+        if let key = self.googleApiKey, !key.isEmpty {
             self.googleProvider = GooglePlacesProvider(apiKey: key)
         }
     }
@@ -199,7 +197,7 @@ final class PlacesService: ObservableObject {
             let candidates = try await resolveProvider().searchNearby(query: query, coordinate: coordinate, radiusMeters: radiusMeters)
             await MainActor.run { results = candidates; isLoading = false }
         } catch {
-            if preferGoogle {
+            if let _ = googleApiKey {
                 do {
                     let fallback = try await mapKitProvider.searchNearby(query: query, coordinate: coordinate, radiusMeters: radiusMeters)
                     await MainActor.run { results = fallback; isLoading = false }
@@ -230,6 +228,10 @@ final class PlacesService: ObservableObject {
 
     func placeDetails(placeId: String) async throws -> PlaceDetails {
         try await resolveProvider().details(placeId: placeId)
+    }
+
+    func hasGoogleProvider() -> Bool {
+        googleProvider != nil
     }
 
     func popularCategories() -> [String] {

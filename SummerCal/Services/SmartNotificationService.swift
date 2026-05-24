@@ -63,10 +63,12 @@ final class SmartNotificationService {
                 }
             case .weatherSummary:
                 let title = "Weather Today"
-                let body = weatherService?.generateWeatherSummary(weather: nil) ?? "Check the weather tab for today's forecast."
+                let todayWeather = fetchTodaysWeather(context: modelContext)
+                let body = weatherService?.generateWeatherSummary(weather: todayWeather) ?? generateLocalWeatherSummary(from: todayWeather)
                 await scheduleAndLog(kind: .weatherSummary, title: title, body: body, date: date, rule: rule, context: modelContext)
             case .weatherAlert:
-                break
+                let todayWeather = fetchTodaysWeather(context: modelContext)
+                await scheduleWeatherAlertsIfNeeded(weather: todayWeather, settings: settings, date: date, rule: rule, context: modelContext)
             case .eventPrep:
                 break
             case .moneyReminder:
@@ -83,6 +85,84 @@ final class SmartNotificationService {
             }
         }
     }
+
+    // MARK: - Weather helpers
+
+    private func fetchTodaysWeather(context: ModelContext) -> WeatherSnapshot? {
+        let now = Date()
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: now)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+
+        let descriptor = FetchDescriptor<WeatherSnapshot>(
+            predicate: #Predicate { snapshot in
+                snapshot.forecastDate >= startOfDay && snapshot.forecastDate < endOfDay
+            },
+            sortBy: [SortDescriptor(\.fetchedAt, order: .reverse)]
+        )
+        var results = (try? context.fetch(descriptor)) ?? []
+        if results.isEmpty {
+            let allDescriptor = FetchDescriptor<WeatherSnapshot>(
+                sortBy: [SortDescriptor(\.fetchedAt, order: .reverse)]
+            )
+            results = (try? context.fetch(allDescriptor)) ?? []
+        }
+        return results.first
+    }
+
+    private func generateLocalWeatherSummary(from snapshot: WeatherSnapshot?) -> String {
+        guard let w = snapshot else { return "Check the weather tab for today's forecast." }
+        var parts = ["\(w.condition), \(String(format: "%.0f", w.temperatureCelsius))°C"]
+        if let feels = w.feelsLikeCelsius {
+            parts.append("feels like \(String(format: "%.0f", feels))°C")
+        }
+        if w.precipitationChance > 0.3 {
+            parts.append("\(Int(w.precipitationChance * 100))% rain")
+        }
+        if let wind = w.windSpeedKph, wind > 15 {
+            parts.append("wind \(String(format: "%.0f", wind)) km/h")
+        }
+        if let uv = w.uvIndex, uv >= 6 {
+            parts.append("UV Index \(uv)")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private func scheduleWeatherAlertsIfNeeded(
+        weather: WeatherSnapshot?,
+        settings: UserSettings,
+        date: Date,
+        rule: SmartNotificationRule,
+        context: ModelContext
+    ) async {
+        guard let w = weather else { return }
+        var alerts: [String] = []
+
+        if settings.weatherAlertsEnabled {
+            if w.precipitationChance >= settings.rainThreshold {
+                alerts.append("Rain alert: \(Int(w.precipitationChance * 100))% chance today")
+            }
+            if w.temperatureCelsius >= settings.heatThresholdCelsius {
+                alerts.append("Heat alert: \(String(format: "%.0f", w.temperatureCelsius))°C exceeds \(Int(settings.heatThresholdCelsius))°C")
+            }
+            if w.temperatureCelsius <= settings.coldThresholdCelsius {
+                alerts.append("Cold alert: \(String(format: "%.0f", w.temperatureCelsius))°C is below \(Int(settings.coldThresholdCelsius))°C")
+            }
+        }
+
+        for alert in alerts {
+            await scheduleAndLog(
+                kind: .weatherAlert,
+                title: "Weather Alert",
+                body: alert,
+                date: date,
+                rule: rule,
+                context: context
+            )
+        }
+    }
+
+    // MARK: - Event notifications
 
     private func scheduleUpcomingEventNotifications(events: [CalendarEvent], notes: [EventNote]?) async {
         for event in events {

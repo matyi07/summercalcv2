@@ -68,21 +68,18 @@ struct WeatherView: View {
             } else {
                 VStack(spacing: 16) {
                     if let error = viewModel.errorMessage {
-                        HStack {
-                            Image(systemName: "exclamationmark.triangle")
-                                .foregroundColor(.orange)
-                            Text(error)
-                                .font(.caption)
-                        }
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-                        .padding(.horizontal)
+                        errorBanner(error)
                     }
 
                     alertsSection
 
                     currentWeatherCard
+
+                    // Astronomical info strip
+                    if let current = viewModel.currentWeather,
+                       current.sunrise != nil || current.sunset != nil {
+                        sunriseSunsetStrip
+                    }
 
                     weatherDetailsGrid
 
@@ -95,6 +92,30 @@ struct WeatherView: View {
                 .padding(.bottom, 24)
             }
         }
+    }
+
+    private func errorBanner(_ error: String) -> some View {
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundColor(.orange)
+                Text(error)
+                    .font(.caption)
+                Spacer()
+            }
+            Button {
+                viewModel.retry(modelContext: modelContext)
+            } label: {
+                Label("Retry", systemImage: "arrow.clockwise")
+                    .font(.caption)
+            }
+            .buttonStyle(.bordered)
+            .tint(.orange)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal)
     }
 
     private var alertsSection: some View {
@@ -160,6 +181,14 @@ struct WeatherView: View {
                         .foregroundStyle(Color(.systemGray))
                         .multilineTextAlignment(.center)
                         .padding(.top, 2)
+
+                    let updatedText = viewModel.formattedLastUpdated()
+                    if !updatedText.isEmpty {
+                        Text(updatedText)
+                            .font(.caption2)
+                            .foregroundStyle(Color(.systemGray3))
+                            .padding(.top, 2)
+                    }
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity)
@@ -178,6 +207,35 @@ struct WeatherView: View {
                 .padding(.horizontal)
             }
         }
+    }
+
+    private var sunriseSunsetStrip: some View {
+        HStack(spacing: 16) {
+            if let sunrise = viewModel.currentWeather?.sunrise {
+                HStack(spacing: 6) {
+                    Image(systemName: "sunrise.fill")
+                        .foregroundColor(.orange)
+                    Text(viewModel.formattedSunriseSunset(sunrise))
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+            }
+            Spacer()
+            if let sunset = viewModel.currentWeather?.sunset {
+                HStack(spacing: 6) {
+                    Image(systemName: "sunset.fill")
+                        .foregroundColor(.orange)
+                    Text(viewModel.formattedSunriseSunset(sunset))
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
     }
 
     private var weatherDetailsGrid: some View {
@@ -220,6 +278,26 @@ struct WeatherView: View {
                         value: "\(Int(weather.precipitationChance * 100))%",
                         color: .blue
                     )
+                    detailCell(
+                        icon: "cloud.fill",
+                        label: "Cloud Cover",
+                        value: viewModel.formattedCloudCover(weather.cloudCover),
+                        color: .gray
+                    )
+                    detailCell(
+                        icon: "thermometer.and.liquid.waves",
+                        label: "Dew Point",
+                        value: viewModel.formattedDewPoint(weather.dewPointCelsius),
+                        color: .cyan
+                    )
+                    if weather.airQualityIndex != nil {
+                        detailCell(
+                            icon: "aqi.low",
+                            label: "Air Quality",
+                            value: viewModel.aqiLabel(weather.airQualityIndex),
+                            color: Color(hex: viewModel.aqiColor(weather.airQualityIndex))
+                        )
+                    }
                 }
                 .padding()
                 .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16))
@@ -236,6 +314,7 @@ struct WeatherView: View {
             Text(value)
                 .font(.caption)
                 .fontWeight(.semibold)
+                .multilineTextAlignment(.center)
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(Color(.systemGray))
@@ -457,5 +536,20 @@ struct WeatherView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEE"
         return formatter.string(from: date)
+    }
+}
+
+// Helper for hex color
+extension Color {
+    init(hex: String) {
+        switch hex {
+        case "green": self = .green
+        case "yellow": self = .yellow
+        case "orange": self = .orange
+        case "red": self = .red
+        case "purple": self = .purple
+        case "brown": self = .brown
+        default: self = .secondary
+        }
     }
 }

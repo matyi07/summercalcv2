@@ -11,6 +11,7 @@ final class WeatherViewModel: NSObject, CLLocationManagerDelegate {
     var errorMessage: String?
     var locationName: String?
     var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
+    var lastUpdated: Date?
 
     var rainAlertEnabled: Bool = true
     var rainThreshold: Double = 0.5
@@ -71,13 +72,28 @@ final class WeatherViewModel: NSObject, CLLocationManagerDelegate {
                 self.currentWeather = result.current
                 self.hourlyForecast = result.hourly
                 self.dailyForecast = result.daily
+                self.lastUpdated = Date()
                 try? modelContext.save()
+            }
+
+            // Fetch air quality asynchronously
+            Task {
+                if let aqi = try? await weatherService.fetchAirQuality(latitude: coordinate.latitude, longitude: coordinate.longitude) {
+                    await MainActor.run {
+                        self.currentWeather?.airQualityIndex = aqi
+                        try? modelContext.save()
+                    }
+                }
             }
         } catch {
             await MainActor.run { self.errorMessage = error.localizedDescription }
         }
 
         await MainActor.run { isLoading = false }
+    }
+
+    func retry(modelContext: ModelContext) {
+        Task { await fetchWeather(modelContext: modelContext) }
     }
 
     func weatherIcon(for condition: String) -> String {
@@ -124,6 +140,49 @@ final class WeatherViewModel: NSObject, CLLocationManagerDelegate {
         return String(format: "%.0f hPa", hPa)
     }
 
+    func formattedCloudCover(_ percent: Double?) -> String {
+        guard let percent else { return "--" }
+        return String(format: "%.0f%%", percent)
+    }
+
+    func formattedDewPoint(_ celsius: Double?) -> String {
+        guard let celsius else { return "--" }
+        return String(format: "%.0f°C", celsius)
+    }
+
+    func formattedSunriseSunset(_ date: Date?) -> String {
+        guard let date else { return "--" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+
+    func aqiLabel(_ index: Int?) -> String {
+        guard let index else { return "--" }
+        switch index {
+        case 1: return "\(index) Good"
+        case 2: return "\(index) Fair"
+        case 3: return "\(index) Moderate"
+        case 4: return "\(index) Poor"
+        case 5: return "\(index) Very Poor"
+        case 6: return "\(index) Severe"
+        default: return "\(index)"
+        }
+    }
+
+    func aqiColor(_ index: Int?) -> String {
+        guard let index else { return "secondary" }
+        switch index {
+        case 1: return "green"
+        case 2: return "yellow"
+        case 3: return "orange"
+        case 4: return "red"
+        case 5: return "purple"
+        case 6: return "brown"
+        default: return "secondary"
+        }
+    }
+
     func uvIndexLabel(_ index: Int?) -> String {
         guard let index else { return "--" }
         switch index {
@@ -146,6 +205,13 @@ final class WeatherViewModel: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    func formattedLastUpdated() -> String {
+        guard let lastUpdated else { return "" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return "Updated at \(formatter.string(from: lastUpdated))"
+    }
+
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         locationAuthorizationStatus = manager.authorizationStatus
         switch manager.authorizationStatus {
@@ -162,6 +228,7 @@ final class WeatherViewModel: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         currentCoordinate = location.coordinate
+        // Don't stop — allow continuous tracking for when user moves
         manager.stopUpdatingLocation()
 
         let geocoder = CLGeocoder()

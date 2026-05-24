@@ -20,6 +20,11 @@ final class WeatherSnapshot {
     var pressure: Double?
     var highTemp: Double?
     var lowTemp: Double?
+    var sunrise: Date?
+    var sunset: Date?
+    var cloudCover: Double?
+    var dewPointCelsius: Double?
+    var airQualityIndex: Int?
 
     init(
         id: UUID = UUID(),
@@ -38,7 +43,12 @@ final class WeatherSnapshot {
         visibility: Double? = nil,
         pressure: Double? = nil,
         highTemp: Double? = nil,
-        lowTemp: Double? = nil
+        lowTemp: Double? = nil,
+        sunrise: Date? = nil,
+        sunset: Date? = nil,
+        cloudCover: Double? = nil,
+        dewPointCelsius: Double? = nil,
+        airQualityIndex: Int? = nil
     ) {
         self.id = id
         self.latitude = latitude
@@ -57,5 +67,10 @@ final class WeatherSnapshot {
         self.pressure = pressure
         self.highTemp = highTemp
         self.lowTemp = lowTemp
+        self.sunrise = sunrise
+        self.sunset = sunset
+        self.cloudCover = cloudCover
+        self.dewPointCelsius = dewPointCelsius
+        self.airQualityIndex = airQualityIndex
     }
 }

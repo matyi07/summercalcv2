@@ -78,7 +78,8 @@ struct TodayView: View {
         .onChange(of: locationService.currentCoordinate) { _, coord in
             guard let coord = coord else { return }
             Task {
-                await weatherService.fetchWeather(for: coord)
+                let settings = UserSettings.current(in: modelContext)
+                _ = try? await weatherService.fetchWeather(for: coord, jwt: settings.weatherKitJWT, context: modelContext)
                 await viewModel.loadDay(modelContext: modelContext)
             }
         }

@@ -91,7 +91,7 @@ final class TodayViewModel {
 
         var nearbyPlaces: [PlaceCandidate] = []
         if let location = location {
-            let placesService = PlacesService()
+            let placesService = PlacesService(googleApiKey: settings.googlePlacesAPIKey)
             await placesService.searchNearby(query: "point of interest", coordinate: location, radiusMeters: 3000)
             nearbyPlaces = placesService.results
         }
