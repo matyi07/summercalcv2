@@ -15,8 +15,11 @@ struct AddEventView: View {
     @State private var notes: String = ""
     @State private var category: String = "general"
     @State private var isOutdoor: Bool = false
+    @State private var notificationEnabled: Bool = false
+    @State private var reminderMinutesBefore: Int = 30
 
     private let categories = ["general", "meeting", "workout", "appointment", "travel", "social", "errand"]
+    private let reminderOptions = [0, 5, 10, 15, 30, 60, 1440]
 
     var body: some View {
         NavigationStack {
@@ -55,6 +58,23 @@ struct AddEventView: View {
                     TextEditor(text: $notes)
                         .frame(minHeight: 100)
                 }
+
+                Section {
+                    Toggle("Enable Reminder", isOn: $notificationEnabled)
+                    if notificationEnabled {
+                        Picker("Remind", selection: $reminderMinutesBefore) {
+                            Text("At time of event").tag(0)
+                            Text("5 minutes before").tag(5)
+                            Text("10 minutes before").tag(10)
+                            Text("15 minutes before").tag(15)
+                            Text("30 minutes before").tag(30)
+                            Text("1 hour before").tag(60)
+                            Text("1 day before").tag(1440)
+                        }
+                    }
+                } header: {
+                    Text("Reminder")
+                }
             }
             .navigationTitle(existingEvent == nil ? "New Event" : "Edit Event")
             .navigationBarTitleDisplayMode(.inline)
@@ -80,6 +100,8 @@ struct AddEventView: View {
                     notes = event.notes ?? ""
                     category = event.category ?? "general"
                     isOutdoor = event.isOutdoor
+                    notificationEnabled = event.notificationEnabled
+                    reminderMinutesBefore = event.reminderMinutesBefore
                 }
             }
         }
@@ -87,6 +109,9 @@ struct AddEventView: View {
 
     private func save() {
         if let event = existingEvent {
+            let timeChanged = event.startDate != startDate || event.endDate != endDate
+            let reminderChanged = event.reminderMinutesBefore != reminderMinutesBefore || event.notificationEnabled != notificationEnabled
+
             event.title = title
             event.startDate = startDate
             event.endDate = endDate
@@ -95,7 +120,19 @@ struct AddEventView: View {
             event.notes = notes.isEmpty ? nil : notes
             event.category = category
             event.isOutdoor = isOutdoor
+            event.notificationEnabled = notificationEnabled
+            event.reminderMinutesBefore = reminderMinutesBefore
             event.updatedAt = Date()
+            try? modelContext.save()
+
+            if timeChanged || reminderChanged {
+                Task {
+                    await NotificationService.shared.cancelAll(forEventId: event.id)
+                    if notificationEnabled {
+                        _ = await NotificationService.shared.scheduleEventReminder(event: event, minutesBefore: reminderMinutesBefore, notes: nil)
+                    }
+                }
+            }
         } else {
             let event = CalendarEvent(
                 title: title,
@@ -105,11 +142,19 @@ struct AddEventView: View {
                 location: location.isEmpty ? nil : location,
                 notes: notes.isEmpty ? nil : notes,
                 category: category,
-                isOutdoor: isOutdoor
+                isOutdoor: isOutdoor,
+                notificationEnabled: notificationEnabled,
+                reminderMinutesBefore: reminderMinutesBefore
             )
             modelContext.insert(event)
+            try? modelContext.save()
+
+            if notificationEnabled {
+                Task {
+                    _ = await NotificationService.shared.scheduleEventReminder(event: event, minutesBefore: reminderMinutesBefore, notes: nil)
+                }
+            }
         }
-        try? modelContext.save()
     }
 
     private func iconForCategory(_ category: String) -> String {

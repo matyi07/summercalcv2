@@ -5,12 +5,17 @@ import SwiftData
 final class MoneyViewModel {
     var selectedMonth: Date = Date()
     var incomeEntries: [IncomeEntry] = []
+    var expenseEntries: [ExpenseEntry] = []
     var workSessions: [WorkSession] = []
     var monthlyGoal: Double = 0
     var currencyCode: String = "USD"
 
     var totalIncome: Double {
         incomeEntries.reduce(0) { $0 + $1.amount }
+    }
+
+    var totalExpenses: Double {
+        expenseEntries.reduce(0) { $0 + $1.amount }
     }
 
     var totalWorkEarnings: Double {
@@ -21,9 +26,13 @@ final class MoneyViewModel {
         totalIncome + totalWorkEarnings
     }
 
+    var netBalance: Double {
+        totalGross - totalExpenses
+    }
+
     var goalProgress: Double {
         guard monthlyGoal > 0 else { return 0 }
-        return min(totalGross / monthlyGoal, 1.0)
+        return min(netBalance / monthlyGoal, 1.0)
     }
 
     var dailyAverage: Double {
@@ -34,7 +43,7 @@ final class MoneyViewModel {
 
         let isCurrentMonth = calendar.isDate(selectedMonth, equalTo: Date(), toGranularity: .month)
         let elapsedDays = isCurrentMonth ? max(dayOfMonth, 1) : daysInMonth
-        return totalGross / Double(elapsedDays)
+        return netBalance / Double(elapsedDays)
     }
 
     var monthLabel: String {
@@ -56,6 +65,7 @@ final class MoneyViewModel {
     func saveGoal(modelContext: ModelContext) {
         let settings = UserSettings.current(in: modelContext)
         settings.monthlyIncomeGoal = monthlyGoal
+        settings.currencyCode = currencyCode
         settings.updatedAt = Date()
         try? modelContext.save()
     }
@@ -73,6 +83,14 @@ final class MoneyViewModel {
         )
         incomeEntries = (try? modelContext.fetch(incomeDescriptor)) ?? []
 
+        let expenseDescriptor = FetchDescriptor<ExpenseEntry>(
+            predicate: #Predicate { entry in
+                entry.date >= startOfMonth && entry.date <= endOfMonth
+            },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        expenseEntries = (try? modelContext.fetch(expenseDescriptor)) ?? []
+
         let workDescriptor = FetchDescriptor<WorkSession>(
             predicate: #Predicate { session in
                 session.date >= startOfMonth && session.date <= endOfMonth
@@ -88,41 +106,16 @@ final class MoneyViewModel {
         incomeEntries.removeAll { $0.id == entry.id }
     }
 
+    func deleteExpenseEntry(_ entry: ExpenseEntry, modelContext: ModelContext) {
+        modelContext.delete(entry)
+        try? modelContext.save()
+        expenseEntries.removeAll { $0.id == entry.id }
+    }
+
     func deleteWorkSession(_ session: WorkSession, modelContext: ModelContext) {
         modelContext.delete(session)
         try? modelContext.save()
         workSessions.removeAll { $0.id == session.id }
-    }
-
-    func addIncomeEntry(date: Date, amount: Double, source: String, description: String, category: IncomeCategory, modelContext: ModelContext) {
-        let entry = IncomeEntry(
-            date: date,
-            amount: amount,
-            source: source,
-            descriptionText: description,
-            category: category
-        )
-        modelContext.insert(entry)
-        try? modelContext.save()
-        incomeEntries.append(entry)
-        incomeEntries.sort { $0.date > $1.date }
-    }
-
-    func addWorkSession(date: Date, startTime: Date, endTime: Date, hourlyRate: Double, description: String, modelContext: ModelContext) {
-        let duration = endTime.timeIntervalSince(startTime) / 3600
-        let earned = duration * hourlyRate
-        let session = WorkSession(
-            date: date,
-            startTime: startTime,
-            endTime: endTime,
-            hourlyRate: hourlyRate,
-            totalEarned: earned,
-            descriptionText: description
-        )
-        modelContext.insert(session)
-        try? modelContext.save()
-        workSessions.append(session)
-        workSessions.sort { $0.date > $1.date }
     }
 
     func navigateMonth(by offset: Int) {

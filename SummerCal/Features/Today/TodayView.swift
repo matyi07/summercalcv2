@@ -36,6 +36,9 @@ struct TodayView: View {
                 if let next = viewModel.nextEvent {
                     nextEventCard(next)
                 }
+                if !viewModel.todaysEvents.isEmpty {
+                    todaysEventsSection
+                }
                 if viewModel.isFreeDay {
                     freeDayBanner
                 }
@@ -154,6 +157,64 @@ struct TodayView: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.1)))
         .onTapGesture {
             appRouter.navigateToEvent(event.id)
+        }
+    }
+
+    private var todaysEventsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Today's Events")
+                .font(.headline)
+
+            ForEach(viewModel.todaysEvents.sorted(by: { $0.startDate < $1.startDate })) { event in
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(eventColor(event))
+                        .frame(width: 4, height: 40)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(event.title)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        HStack(spacing: 8) {
+                            Text(event.startDate, style: .time)
+                                .font(.caption)
+                                .foregroundStyle(Color(.systemGray))
+                            if let location = event.location, !location.isEmpty {
+                                Label(location, systemImage: "mappin.and.ellipse")
+                                    .font(.caption)
+                                    .foregroundStyle(Color(.systemGray))
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                    Spacer()
+                    if event.notificationEnabled {
+                        Image(systemName: "bell.fill")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(Color(.systemGray3))
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemBackground)).shadow(color: .black.opacity(0.05), radius: 2))
+                .onTapGesture {
+                    appRouter.navigateToEvent(event.id)
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    private func eventColor(_ event: CalendarEvent) -> Color {
+        if event.isOutdoor { return .green }
+        switch event.category {
+        case "meeting": return .blue
+        case "workout": return .orange
+        case "appointment": return .red
+        case "travel": return .purple
+        default: return .gray
         }
     }
 

@@ -5,14 +5,11 @@ struct MoneyView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = MoneyViewModel()
     @State private var showAddIncome: Bool = false
+    @State private var showAddExpense: Bool = false
     @State private var showAddWork: Bool = false
-    @State private var showSettings: Bool = false
-    @State private var settingsGoalText: String = ""
-    @State private var settingsCurrency: String = "USD"
-    @State private var pendingIncomeRefresh: Bool = false
-    @State private var pendingWorkRefresh: Bool = false
-
-    private let currencies = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN", "BRL", "KRW"]
+    @State private var editIncome: IncomeEntry?
+    @State private var editExpense: ExpenseEntry?
+    @State private var editSession: WorkSession?
 
     var body: some View {
         List {
@@ -32,7 +29,7 @@ struct MoneyView: View {
                 HStack {
                     Text("Entries")
                     Spacer()
-                    Text("\(viewModel.incomeEntries.count)")
+                    Text("\(viewModel.incomeEntries.count + viewModel.expenseEntries.count)")
                         .foregroundStyle(Color(.systemGray))
                 }
                 HStack {
@@ -43,7 +40,7 @@ struct MoneyView: View {
                 }
             }
 
-            Section("Income Entries") {
+            Section {
                 if viewModel.incomeEntries.isEmpty {
                     ContentUnavailableView(
                         "No Income Entries",
@@ -53,6 +50,10 @@ struct MoneyView: View {
                 } else {
                     ForEach(viewModel.incomeEntries) { entry in
                         incomeRow(entry)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                editIncome = entry
+                            }
                     }
                     .onDelete { offsets in
                         for idx in offsets {
@@ -60,15 +61,48 @@ struct MoneyView: View {
                         }
                     }
                 }
-
                 Button {
+                    editIncome = nil
                     showAddIncome = true
                 } label: {
                     Label("Add Income Entry", systemImage: "plus.circle")
                 }
+            } header: {
+                Text("Income")
             }
 
-            Section("Work Sessions") {
+            Section {
+                if viewModel.expenseEntries.isEmpty {
+                    ContentUnavailableView(
+                        "No Expenses",
+                        systemImage: "creditcard",
+                        description: Text("Track your spending by adding expenses.")
+                    )
+                } else {
+                    ForEach(viewModel.expenseEntries) { entry in
+                        expenseRow(entry)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                editExpense = entry
+                            }
+                    }
+                    .onDelete { offsets in
+                        for idx in offsets {
+                            viewModel.deleteExpenseEntry(viewModel.expenseEntries[idx], modelContext: modelContext)
+                        }
+                    }
+                }
+                Button {
+                    editExpense = nil
+                    showAddExpense = true
+                } label: {
+                    Label("Add Expense", systemImage: "plus.circle")
+                }
+            } header: {
+                Text("Expenses")
+            }
+
+            Section {
                 if viewModel.workSessions.isEmpty {
                     ContentUnavailableView(
                         "No Work Sessions",
@@ -78,6 +112,10 @@ struct MoneyView: View {
                 } else {
                     ForEach(viewModel.workSessions) { session in
                         workSessionRow(session)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                editSession = session
+                            }
                     }
                     .onDelete { offsets in
                         for idx in offsets {
@@ -85,30 +123,20 @@ struct MoneyView: View {
                         }
                     }
                 }
-
                 Button {
+                    editSession = nil
                     showAddWork = true
                 } label: {
                     Label("Add Work Session", systemImage: "plus.circle")
                 }
-            }
-
-            Section {
-                Button {
-                    settingsGoalText = String(format: "%.0f", viewModel.monthlyGoal)
-                    settingsCurrency = viewModel.currencyCode
-                    showSettings = true
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
+            } header: {
+                Text("Work Sessions")
             }
         }
         .navigationTitle("Money")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                HStack(spacing: 8) {
-                    monthNavigation
-                }
+                monthNavigation
             }
         }
         .onAppear {
@@ -119,17 +147,19 @@ struct MoneyView: View {
             viewModel.loadEntries(modelContext: modelContext)
         }
         .sheet(isPresented: $showAddIncome) {
-            AddIncomeView {
+            AddIncomeView(existingEntry: editIncome) {
+                viewModel.loadEntries(modelContext: modelContext)
+            }
+        }
+        .sheet(isPresented: $showAddExpense) {
+            AddExpenseView(existingEntry: editExpense) {
                 viewModel.loadEntries(modelContext: modelContext)
             }
         }
         .sheet(isPresented: $showAddWork) {
-            AddWorkSessionView {
+            AddWorkSessionView(existingSession: editSession) {
                 viewModel.loadEntries(modelContext: modelContext)
             }
-        }
-        .sheet(isPresented: $showSettings) {
-            moneySettingsSheet
         }
     }
 
@@ -165,13 +195,13 @@ struct MoneyView: View {
             VStack(spacing: 16) {
                 HStack {
                     VStack(alignment: .leading) {
-                        Text("Total Gross")
+                        Text("Net Balance")
                             .font(.caption)
                             .foregroundStyle(Color(.systemGray))
-                        Text(viewModel.formatCurrency(viewModel.totalGross))
+                        Text(viewModel.formatCurrency(viewModel.netBalance))
                             .font(.title)
                             .fontWeight(.bold)
-                            .foregroundStyle(.orange.gradient)
+                            .foregroundStyle(viewModel.netBalance >= 0 ? Color.green.gradient : Color.red.gradient)
                     }
                     Spacer()
                 }
@@ -180,22 +210,37 @@ struct MoneyView: View {
 
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Work Earnings")
-                            .font(.caption2)
-                            .foregroundStyle(Color(.systemGray))
-                        Text(viewModel.formatCurrency(viewModel.totalWorkEarnings))
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("Income Entries")
+                        Text("Income")
                             .font(.caption2)
                             .foregroundStyle(Color(.systemGray))
                         Text(viewModel.formatCurrency(viewModel.totalIncome))
                             .font(.subheadline)
                             .fontWeight(.medium)
+                            .foregroundColor(.green)
                     }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Expenses")
+                            .font(.caption2)
+                            .foregroundStyle(Color(.systemGray))
+                        Text(viewModel.formatCurrency(viewModel.totalExpenses))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.red)
+                    }
+                }
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Work Sessions")
+                            .font(.caption2)
+                            .foregroundStyle(Color(.systemGray))
+                        Text(viewModel.formatCurrency(viewModel.totalWorkEarnings))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.blue)
+                    }
+                    Spacer()
                 }
             }
             .padding(.vertical, 8)
@@ -210,7 +255,7 @@ struct MoneyView: View {
                         .font(.caption)
                         .foregroundStyle(Color(.systemGray))
                     Spacer()
-                    Text("\(viewModel.formatCurrency(viewModel.totalGross)) / \(viewModel.formattedGoal)")
+                    Text("\(viewModel.formatCurrency(viewModel.netBalance)) / \(viewModel.formattedGoal)")
                         .font(.caption)
                         .fontWeight(.medium)
                 }
@@ -259,10 +304,61 @@ struct MoneyView: View {
 
             Spacer()
 
-            Text(viewModel.formatCurrency(entry.amount))
-                .font(.body)
-                .fontWeight(.semibold)
-                .foregroundColor(.green)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(viewModel.formatCurrency(entry.amount))
+                    .font(.body)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.green)
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(Color(.systemGray3))
+            }
+        }
+        .padding(.vertical, 2)
+        .frame(minHeight: 44)
+    }
+
+    private func expenseRow(_ entry: ExpenseEntry) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: entry.category.icon)
+                .font(.title3)
+                .frame(width: 32, height: 32)
+                .background(.red.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+                .foregroundColor(.red)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.category.label)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                if !entry.note.isEmpty {
+                    Text(entry.note)
+                        .font(.caption)
+                        .foregroundStyle(Color(.systemGray))
+                        .lineLimit(1)
+                }
+                HStack(spacing: 4) {
+                    Image(systemName: paymentIcon(entry.paymentMethod))
+                        .font(.caption2)
+                    Text(entry.paymentMethod.capitalized)
+                        .font(.caption2)
+                    Text(viewModel.formatDate(entry.date))
+                        .font(.caption2)
+                }
+                .foregroundStyle(Color(.systemGray3))
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(viewModel.formatCurrency(entry.amount))
+                    .font(.body)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.red)
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(Color(.systemGray3))
+            }
         }
         .padding(.vertical, 2)
         .frame(minHeight: 44)
@@ -300,10 +396,15 @@ struct MoneyView: View {
 
             Spacer()
 
-            Text(viewModel.formatCurrency(session.totalEarned))
-                .font(.body)
-                .fontWeight(.semibold)
-                .foregroundColor(.blue)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(viewModel.formatCurrency(session.totalEarned))
+                    .font(.body)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.blue)
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(Color(.systemGray3))
+            }
         }
         .padding(.vertical, 2)
         .frame(minHeight: 44)
@@ -318,55 +419,13 @@ struct MoneyView: View {
         }
     }
 
-    private var moneySettingsSheet: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Picker("Currency", selection: $settingsCurrency) {
-                        ForEach(currencies, id: \.self) { code in
-                            Text(code).tag(code)
-                        }
-                    }
-                } header: {
-                    Text("Currency")
-                        .font(.footnote)
-                        .textCase(.uppercase)
-                        .foregroundColor(Color(.systemGray))
-                }
-
-                Section {
-                    HStack {
-                        Text(settingsCurrency)
-                            .foregroundStyle(Color(.systemGray))
-                        TextField("Goal", text: $settingsGoalText)
-                            .keyboardType(.numberPad)
-                    }
-                } header: {
-                    Text("Monthly Income Goal")
-                        .font(.footnote)
-                        .textCase(.uppercase)
-                        .foregroundColor(Color(.systemGray))
-                } footer: {
-                    Text("Set a target to track your progress throughout the month.")
-                }
-            }
-            .navigationTitle("Money Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showSettings = false }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        viewModel.currencyCode = settingsCurrency
-                        let cleaned = settingsGoalText.replacingOccurrences(of: ",", with: ".")
-                        viewModel.monthlyGoal = Double(cleaned) ?? 0
-                        viewModel.saveGoal(modelContext: modelContext)
-                        showSettings = false
-                    }
-                }
-            }
+    private func paymentIcon(_ method: String) -> String {
+        switch method.lowercased() {
+        case "card": return "creditcard"
+        case "cash": return "banknote"
+        case "transfer": return "arrow.left.arrow.right"
+        case "direct debit": return "arrow.down.forward"
+        default: return "creditcard"
         }
-        .presentationDetents([.medium])
     }
 }

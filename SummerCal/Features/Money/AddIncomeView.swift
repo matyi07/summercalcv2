@@ -5,6 +5,8 @@ struct AddIncomeView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
+    var existingEntry: IncomeEntry?
+
     @State private var date: Date = Date()
     @State private var amountText: String = ""
     @State private var source: String = ""
@@ -14,6 +16,8 @@ struct AddIncomeView: View {
     @State private var amountErrorTrigger: Bool = false
 
     var onSave: (() -> Void)?
+
+    private var isEditing: Bool { existingEntry != nil }
 
     private var sanitizedAmount: Double {
         let cleaned = amountText.replacingOccurrences(of: ",", with: ".")
@@ -65,8 +69,10 @@ struct AddIncomeView: View {
                         .lineLimit(2...4)
                 }
 
-                Section {
-                    Toggle("Recurring Monthly", isOn: $isRecurring)
+                if !isEditing {
+                    Section {
+                        Toggle("Recurring Monthly", isOn: $isRecurring)
+                    }
                 }
 
                 Section {
@@ -81,7 +87,7 @@ struct AddIncomeView: View {
                 }
             }
             .sensoryFeedback(.error, trigger: amountErrorTrigger)
-            .navigationTitle("Add Income")
+            .navigationTitle(isEditing ? "Edit Income" : "Add Income")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -94,6 +100,15 @@ struct AddIncomeView: View {
                     .disabled(!amountIsValid || source.isEmpty)
                 }
             }
+            .onAppear {
+                if let entry = existingEntry {
+                    date = entry.date
+                    amountText = String(format: "%.2f", entry.amount).replacingOccurrences(of: ".", with: decimalSeparator())
+                    source = entry.source
+                    note = entry.descriptionText
+                    category = entry.category
+                }
+            }
         }
     }
 
@@ -103,6 +118,10 @@ struct AddIncomeView: View {
         formatter.numberStyle = .currency
         formatter.currencyCode = currencyCode
         return formatter.string(from: NSNumber(value: amount)) ?? "$\(String(format: "%.2f", amount))"
+    }
+
+    private func decimalSeparator() -> String {
+        Locale.current.decimalSeparator ?? "."
     }
 
     private func categoryDisplayName(_ category: IncomeCategory) -> String {
@@ -127,28 +146,35 @@ struct AddIncomeView: View {
         let amount = sanitizedAmount
         guard amount > 0 else { return }
 
-        let entry = IncomeEntry(
-            date: date,
-            amount: amount,
-            source: source,
-            descriptionText: note,
-            category: category
-        )
-        modelContext.insert(entry)
-        try? modelContext.save()
-
-        if isRecurring, let nextMonth = Calendar.current.date(byAdding: .month, value: 1, to: date) {
-            let futureEntry = IncomeEntry(
-                date: nextMonth,
+        if let entry = existingEntry {
+            entry.date = date
+            entry.amount = amount
+            entry.source = source
+            entry.descriptionText = note
+            entry.category = category
+        } else {
+            let entry = IncomeEntry(
+                date: date,
                 amount: amount,
                 source: source,
                 descriptionText: note,
                 category: category
             )
-            modelContext.insert(futureEntry)
-            try? modelContext.save()
+            modelContext.insert(entry)
+
+            if isRecurring, let nextMonth = Calendar.current.date(byAdding: .month, value: 1, to: date) {
+                let futureEntry = IncomeEntry(
+                    date: nextMonth,
+                    amount: amount,
+                    source: source,
+                    descriptionText: note,
+                    category: category
+                )
+                modelContext.insert(futureEntry)
+            }
         }
 
+        try? modelContext.save()
         onSave?()
         dismiss()
     }

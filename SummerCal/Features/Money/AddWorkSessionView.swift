@@ -5,6 +5,8 @@ struct AddWorkSessionView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
+    var existingSession: WorkSession?
+
     @State private var date: Date = Date()
     @State private var startTime: Date = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
     @State private var endTime: Date = Calendar.current.date(bySettingHour: 17, minute: 0, second: 0, of: Date()) ?? Date()
@@ -13,6 +15,8 @@ struct AddWorkSessionView: View {
     @State private var rateErrorTrigger: Bool = false
 
     var onSave: (() -> Void)?
+
+    private var isEditing: Bool { existingSession != nil }
 
     private var hourlyRate: Double {
         let cleaned = hourlyRateText.replacingOccurrences(of: ",", with: ".")
@@ -87,7 +91,7 @@ struct AddWorkSessionView: View {
                 }
             }
             .sensoryFeedback(.error, trigger: rateErrorTrigger)
-            .navigationTitle("Add Work Session")
+            .navigationTitle(isEditing ? "Edit Work Session" : "Add Work Session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -98,6 +102,15 @@ struct AddWorkSessionView: View {
                         save()
                     }
                     .disabled(!isValid)
+                }
+            }
+            .onAppear {
+                if let session = existingSession {
+                    date = session.date
+                    startTime = session.startTime
+                    endTime = session.endTime
+                    hourlyRateText = String(format: "%.2f", session.hourlyRate).replacingOccurrences(of: ".", with: decimalSeparator())
+                    note = session.descriptionText
                 }
             }
         }
@@ -119,21 +132,34 @@ struct AddWorkSessionView: View {
         return formatter.string(from: NSNumber(value: amount)) ?? "$\(String(format: "%.2f", amount))"
     }
 
+    private func decimalSeparator() -> String {
+        Locale.current.decimalSeparator ?? "."
+    }
+
     private func save() {
         let duration = endTime.timeIntervalSince(startTime) / 3600
         let earned = duration * hourlyRate
 
-        let session = WorkSession(
-            date: date,
-            startTime: startTime,
-            endTime: endTime,
-            hourlyRate: hourlyRate,
-            totalEarned: earned,
-            descriptionText: note
-        )
-        modelContext.insert(session)
-        try? modelContext.save()
+        if let session = existingSession {
+            session.date = date
+            session.startTime = startTime
+            session.endTime = endTime
+            session.hourlyRate = hourlyRate
+            session.totalEarned = earned
+            session.descriptionText = note
+        } else {
+            let session = WorkSession(
+                date: date,
+                startTime: startTime,
+                endTime: endTime,
+                hourlyRate: hourlyRate,
+                totalEarned: earned,
+                descriptionText: note
+            )
+            modelContext.insert(session)
+        }
 
+        try? modelContext.save()
         onSave?()
         dismiss()
     }

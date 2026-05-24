@@ -469,6 +469,10 @@ struct EventDetailView: View {
         viewModel.notes.forEach { modelContext.delete($0) }
         modelContext.delete(event)
         try? modelContext.save()
+
+        Task {
+            await NotificationService.shared.cancelAll(forEventId: event.id)
+        }
         dismiss()
     }
 

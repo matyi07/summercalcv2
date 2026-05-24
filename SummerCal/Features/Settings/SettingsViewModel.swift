@@ -130,6 +130,7 @@ final class SettingsViewModel {
             ActivitySuggestion.self,
             EventReminder.self,
             IncomeEntry.self,
+            ExpenseEntry.self,
             NotificationLog.self,
             SmartNotificationRule.self,
             UserSettings.self,

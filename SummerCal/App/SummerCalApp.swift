@@ -17,6 +17,7 @@ struct SummerCalApp: App {
             WeatherSnapshot.self,
             PlaceCandidate.self,
             IncomeEntry.self,
+            ExpenseEntry.self,
             WorkSession.self,
             UserSettings.self,
         ])

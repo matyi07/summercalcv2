@@ -13,12 +13,18 @@ struct ContentView: View {
             TabView(selection: $router.selectedTab) {
                 NavigationStack {
                     TodayView()
+                        .navigationDestination(for: AppRoute.self) { route in
+                            destinationView(for: route)
+                        }
                 }
                 .tabItem { Label(AppTab.today.title, systemImage: AppTab.today.systemImage) }
                 .tag(AppTab.today)
 
                 NavigationStack {
                     CalendarView()
+                        .navigationDestination(for: AppRoute.self) { route in
+                            destinationView(for: route)
+                        }
                 }
                 .tabItem { Label(AppTab.calendar.title, systemImage: AppTab.calendar.systemImage) }
                 .tag(AppTab.calendar)
