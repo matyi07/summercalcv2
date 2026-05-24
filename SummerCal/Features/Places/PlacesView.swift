@@ -134,11 +134,100 @@ struct PlacesView: View {
     }
 
     @ViewBuilder
-    private func mapStyleForOption() -> some MapStyle {
+    private var mapContentStyled: some View {
         switch viewModel.selectedMapStyle {
-        case .standard: MapStyle.standard
-        case .satellite: MapStyle.imagery
-        case .hybrid: MapStyle.hybrid
+        case .standard:
+            mapContentBase
+                .mapStyle(.standard)
+        case .satellite:
+            mapContentBase
+                .mapStyle(.imagery)
+        case .hybrid:
+            mapContentBase
+                .mapStyle(.hybrid)
+        }
+    }
+
+    private var mapContentBase: some View {
+        ZStack(alignment: .topTrailing) {
+            Map(position: $cameraPosition) {
+                ForEach(viewModel.placeResults) { place in
+                    Annotation(place.name, coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)) {
+                        VStack(spacing: 0) {
+                            ZStack {
+                                Circle()
+                                    .fill(.orange)
+                                    .frame(width: 32, height: 32)
+                                Image(systemName: viewModel.categoryIcon(for: place.category))
+                                    .font(.caption)
+                                    .foregroundColor(.white)
+                            }
+
+                            Image(systemName: "arrowtriangle.down.fill")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                                .offset(y: -3)
+                        }
+                        .onTapGesture {
+                            selectedPlace = place
+                            showDetail = true
+                        }
+                    }
+                }
+                if let coord = viewModel.currentCoordinate {
+                    Annotation("You", coordinate: coord) {
+                        ZStack {
+                            Circle()
+                                .fill(.blue)
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "person.circle.fill")
+                                .font(.caption)
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+            }
+            .mapControls {
+                MapUserLocationButton()
+                MapCompass()
+                MapScaleView()
+            }
+            .onChange(of: viewModel.currentCoordinate?.latitude) { _, _ in
+                panToCurrentLocation()
+            }
+            .onChange(of: viewModel.currentCoordinate?.longitude) { _, _ in
+                panToCurrentLocation()
+            }
+
+            VStack(spacing: 4) {
+                Menu {
+                    ForEach(PlacesViewModel.MapStyleOption.allCases) { option in
+                        Button {
+                            viewModel.selectedMapStyle = option
+                        } label: {
+                            HStack {
+                                Label(option.label, systemImage: option.icon)
+                                if viewModel.selectedMapStyle == option {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: viewModel.selectedMapStyle.icon)
+                        Text(viewModel.selectedMapStyle.label)
+                            .font(.caption)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                }
+                .padding(.trailing, 8)
+                .padding(.top, 4)
+            }
         }
     }
 
