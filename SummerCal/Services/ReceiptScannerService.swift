@@ -12,6 +12,12 @@ struct ReceiptExtraction: Codable {
     var category: String?
 }
 
+private struct ReceiptScanRequestPayload {
+    var messages: [[String: Any]]
+    var fallbackText: String?
+    var usesImageInput: Bool
+}
+
 final class ReceiptScannerService {
     func scanReceipt(imageData: Data, provider: String, apiKey: String, model: String, baseURL: String?) async throws -> ReceiptExtraction {
         let normalizedImageData = try ReceiptImageNormalizer.jpegData(from: imageData)
@@ -20,18 +26,24 @@ final class ReceiptScannerService {
             throw NSError(domain: "ReceiptScanner", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid API URL"])
         }
 
-        let messages = try await messages(
+        let payload = try await requestPayload(
             for: normalizedImageData,
             provider: provider,
             model: model
         )
 
-        let requestBody: [String: Any] = [
+        var requestBody: [String: Any] = [
             "model": model,
-            "messages": messages,
-            "max_tokens": 500,
+            "messages": payload.messages,
+            "max_tokens": 800,
             "temperature": 0.0
         ]
+        if shouldRequestJSONMode(provider: provider, model: model, usesImageInput: payload.usesImageInput) {
+            requestBody["response_format"] = ["type": "json_object"]
+        }
+        if provider == "deepSeek" {
+            requestBody["thinking"] = ["type": "disabled"]
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -72,23 +84,30 @@ final class ReceiptScannerService {
             throw NSError(domain: "ReceiptScanner", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unexpected response format"])
         }
 
-        return try decodeExtraction(from: content)
+        return try decodeExtraction(from: content, fallbackText: payload.fallbackText)
     }
 
-    private func messages(for imageData: Data, provider: String, model: String) async throws -> [[String: Any]] {
+    private func requestPayload(for imageData: Data, provider: String, model: String) async throws -> ReceiptScanRequestPayload {
         let prompt = receiptExtractionPrompt(inputDescription: "this receipt image")
+        let systemMessage: [String: Any] = [
+            "role": "system",
+            "content": "You extract receipt data. Return only one valid JSON object and no prose."
+        ]
 
         guard supportsImageInput(provider: provider, model: model) else {
             let recognizedText = try await recognizeText(from: imageData)
-            return [
+            let messages: [[String: Any]] = [
+                systemMessage,
                 [
                     "role": "user",
                     "content": receiptExtractionPrompt(inputDescription: "the OCR text below") + "\n\nOCR text:\n\(recognizedText)"
                 ]
             ]
+            return ReceiptScanRequestPayload(messages: messages, fallbackText: recognizedText, usesImageInput: false)
         }
 
-        return [
+        let messages: [[String: Any]] = [
+            systemMessage,
             [
                 "role": "user",
                 "content": [
@@ -97,6 +116,7 @@ final class ReceiptScannerService {
                 ]
             ]
         ]
+        return ReceiptScanRequestPayload(messages: messages, fallbackText: nil, usesImageInput: true)
     }
 
     private func receiptExtractionPrompt(inputDescription: String) -> String {
@@ -142,6 +162,20 @@ final class ReceiptScannerService {
         return false
     }
 
+    private func shouldRequestJSONMode(provider: String, model: String, usesImageInput: Bool) -> Bool {
+        if usesImageInput { return false }
+        let normalizedModel = model.lowercased()
+
+        if provider == "deepSeek" || normalizedModel.contains("deepseek") {
+            return true
+        }
+        if provider == "openAI" {
+            return true
+        }
+
+        return false
+    }
+
     private func recognizeText(from imageData: Data) async throws -> String {
         try await Task.detached(priority: .userInitiated) {
             let request = VNRecognizeTextRequest()
@@ -168,10 +202,13 @@ final class ReceiptScannerService {
         }.value
     }
 
-    private func decodeExtraction(from content: String) throws -> ReceiptExtraction {
+    private func decodeExtraction(from content: String, fallbackText: String?) throws -> ReceiptExtraction {
         let cleaned = stripCodeFences(content)
         guard let jsonString = firstJSONObject(in: cleaned),
               let jsonData = jsonString.data(using: .utf8) else {
+            if let fallback = heuristicExtraction(from: cleaned) ?? heuristicExtraction(from: fallbackText) {
+                return fallback
+            }
             throw parseError("AI returned text instead of a JSON receipt object: \(preview(cleaned))")
         }
 
@@ -185,8 +222,14 @@ final class ReceiptScannerService {
             }
             throw parseError("AI returned JSON, but not a receipt object: \(preview(jsonString))")
         } catch let error as NSError where error.domain == "ReceiptScanner" {
+            if let fallback = heuristicExtraction(from: cleaned) ?? heuristicExtraction(from: fallbackText) {
+                return fallback
+            }
             throw error
         } catch {
+            if let fallback = heuristicExtraction(from: cleaned) ?? heuristicExtraction(from: fallbackText) {
+                return fallback
+            }
             throw parseError("AI returned malformed JSON: \(preview(jsonString))")
         }
     }
@@ -204,17 +247,186 @@ final class ReceiptScannerService {
     }
 
     private func validated(_ extraction: ReceiptExtraction, source: String) throws -> ReceiptExtraction {
-        if extraction.merchantName != nil ||
-            extraction.date != nil ||
-            extraction.total != nil ||
-            extraction.tax != nil ||
-            extraction.currency != nil ||
-            extraction.lineItems?.isEmpty == false ||
-            extraction.category != nil {
+        if hasUsableData(extraction) {
             return extraction
         }
 
         throw parseError("AI JSON did not include recognizable receipt fields: \(preview(source))")
+    }
+
+    private func hasUsableData(_ extraction: ReceiptExtraction) -> Bool {
+        extraction.merchantName != nil ||
+            extraction.date != nil ||
+            extraction.total != nil ||
+            extraction.tax != nil ||
+            extraction.currency != nil ||
+            extraction.lineItems?.isEmpty == false
+    }
+
+    private func heuristicExtraction(from text: String?) -> ReceiptExtraction? {
+        guard let text else { return nil }
+        let lines = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !lines.isEmpty else { return nil }
+
+        let extraction = ReceiptExtraction(
+            merchantName: heuristicMerchant(from: lines),
+            date: heuristicDate(from: text),
+            total: heuristicTotal(from: lines),
+            tax: heuristicTax(from: lines),
+            currency: heuristicCurrency(from: text),
+            lineItems: heuristicLineItems(from: lines),
+            category: heuristicCategory(from: text)
+        )
+
+        return hasUsableData(extraction) ? extraction : nil
+    }
+
+    private func heuristicMerchant(from lines: [String]) -> String? {
+        let blockedTerms = [
+            "receipt", "invoice", "total", "subtotal", "tax", "vat", "date",
+            "time", "card", "visa", "mastercard", "cash", "change", "amount",
+            "auth", "terminal", "approved"
+        ]
+
+        return lines.first { line in
+            let lower = line.lowercased()
+            let hasLetter = line.rangeOfCharacter(from: .letters) != nil
+            let isBlocked = blockedTerms.contains { lower.contains($0) }
+            return hasLetter && !isBlocked && moneyValues(in: line).isEmpty && line.count <= 80
+        }
+    }
+
+    private func heuristicTotal(from lines: [String]) -> Double? {
+        let strongTerms = ["grand total", "amount due", "balance due", "total due", "total", "paid"]
+        for term in strongTerms {
+            let matches = lines.compactMap { line -> Double? in
+                let lower = line.lowercased()
+                guard lower.contains(term), !lower.contains("subtotal") else { return nil }
+                return moneyValues(in: line).last
+            }
+            if let value = matches.last, value > 0 {
+                return value
+            }
+        }
+
+        return lines
+            .flatMap { moneyValues(in: $0) }
+            .filter { $0 > 0 }
+            .max()
+    }
+
+    private func heuristicTax(from lines: [String]) -> Double? {
+        lines.compactMap { line -> Double? in
+            let lower = line.lowercased()
+            guard lower.contains("tax") || lower.contains("vat") else { return nil }
+            return moneyValues(in: line).last
+        }.last
+    }
+
+    private func heuristicDate(from text: String) -> String? {
+        let patterns = [
+            #"\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b"#,
+            #"\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b"#
+        ]
+
+        for pattern in patterns {
+            guard let match = firstMatch(pattern: pattern, in: text) else { continue }
+            if let normalized = normalizedDate(match) {
+                return normalized
+            }
+            return match
+        }
+
+        return nil
+    }
+
+    private func normalizedDate(_ value: String) -> String? {
+        let inputFormats = [
+            "yyyy-MM-dd", "yyyy/M/d", "yyyy.M.d",
+            "M/d/yyyy", "M-d-yyyy", "M.d.yyyy",
+            "d/M/yyyy", "d-M-yyyy", "d.M.yyyy",
+            "M/d/yy", "M-d-yy", "M.d.yy",
+            "d/M/yy", "d-M-yy", "d.M.yy"
+        ]
+
+        for format in inputFormats {
+            let parser = DateFormatter()
+            parser.locale = Locale(identifier: "en_US_POSIX")
+            parser.dateFormat = format
+            guard let date = parser.date(from: value) else { continue }
+
+            let output = DateFormatter()
+            output.locale = Locale(identifier: "en_US_POSIX")
+            output.dateFormat = "yyyy-MM-dd"
+            return output.string(from: date)
+        }
+
+        return nil
+    }
+
+    private func heuristicCurrency(from text: String) -> String? {
+        let upper = text.uppercased()
+        if upper.contains("USD") || text.contains("$") { return "USD" }
+        if upper.contains("EUR") || text.contains("€") { return "EUR" }
+        if upper.contains("GBP") || text.contains("£") { return "GBP" }
+        if upper.contains("HUF") || upper.contains("FT") { return "HUF" }
+        return nil
+    }
+
+    private func heuristicCategory(from text: String) -> String? {
+        let lower = text.lowercased()
+        if ["restaurant", "cafe", "coffee", "grocery", "market", "food"].contains(where: { lower.contains($0) }) {
+            return "food"
+        }
+        if ["pharmacy", "drug", "clinic", "medical"].contains(where: { lower.contains($0) }) {
+            return "health"
+        }
+        if ["fuel", "gas", "parking", "uber", "taxi"].contains(where: { lower.contains($0) }) {
+            return "transport"
+        }
+        if ["store", "shop", "retail"].contains(where: { lower.contains($0) }) {
+            return "shopping"
+        }
+        return nil
+    }
+
+    private func heuristicLineItems(from lines: [String]) -> [String]? {
+        let blockedTerms = ["total", "subtotal", "tax", "vat", "change", "balance", "paid"]
+        let items = lines.compactMap { line -> String? in
+            let lower = line.lowercased()
+            guard line.rangeOfCharacter(from: .letters) != nil,
+                  !blockedTerms.contains(where: { lower.contains($0) }),
+                  !moneyValues(in: line).isEmpty else {
+                return nil
+            }
+            return line
+        }
+        let limited = Array(items.prefix(12))
+        return limited.isEmpty ? nil : limited
+    }
+
+    private func moneyValues(in text: String) -> [Double] {
+        let pattern = #"(?<!\d)(?:[A-Z]{3}\s*)?[$€£]\s*-?\d+(?:[ .]\d{3})*(?:[.,]\d{2})?|-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d{2})?\s*(?:HUF|FT|USD|EUR|GBP)?\b|-?\d+(?:[.,]\d{2})\s*(?:HUF|FT|USD|EUR|GBP)?\b|-?\d+\s*(?:HUF|FT|USD|EUR|GBP)\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+
+        return regex.matches(in: text, range: range).compactMap { match in
+            guard let swiftRange = Range(match.range, in: text) else { return nil }
+            return optionalDouble(String(text[swiftRange]))
+        }
+    }
+
+    private func firstMatch(pattern: String, in text: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              let swiftRange = Range(match.range, in: text) else {
+            return nil
+        }
+        return String(text[swiftRange])
     }
 
     private func receiptDictionary(from dict: [String: Any]) -> [String: Any] {
