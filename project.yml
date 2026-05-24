@@ -49,6 +49,13 @@ targets:
         UIUserInterfaceStyle: Light
         NSLocationWhenInUseUsageDescription: "SummerCal uses your location to show local weather and nearby places. You can disable this anytime."
         NSLocationAlwaysAndWhenInUseUsageDescription: "SummerCal uses your location for weather alerts and place suggestions."
+        NSCameraUsageDescription: "SummerCal uses the camera to capture receipt photos for expense tracking."
+        NSPhotoLibraryUsageDescription: "SummerCal lets you choose receipt photos from your library for expense tracking."
+        NSPhotoLibraryAddUsageDescription: "SummerCal can save generated images to your photo library if you choose."
+        NSCalendarsFullAccessUsageDescription: "SummerCal can show your existing calendar events alongside your plans."
+        NSCalendarsWriteOnlyAccessUsageDescription: "SummerCal can add events to your calendar if you choose."
+        LSApplicationQueriesSchemes:
+          - comgooglemaps
     entitlements:
       path: SummerCal/SummerCal.entitlements
       properties:

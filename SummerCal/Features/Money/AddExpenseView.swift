@@ -124,23 +124,19 @@ struct AddExpenseView: View {
             }
             .onChange(of: selectedPhotos) { _, _ in
                 Task {
-                    var loaded: [Data] = []
-                    for item in selectedPhotos {
-                        if let data = try? await item.loadTransferable(type: Data.self) {
-                            loaded.append(normalizeImage(data))
-                        }
-                    }
-                    receiptImages = loaded
-                    scannedCount = 0
-                    scanError = nil
+                    await loadSelectedPhotos()
                 }
             }
             .onChange(of: capturedUIImage) { _, image in
-                if let image {
-                    receiptImages.append(image.jpegData(compressionQuality: 0.85) ?? Data())
+                guard let image else { return }
+                do {
+                    receiptImages.append(try ReceiptImageNormalizer.jpegData(from: image))
                     scannedCount = 0
                     scanError = nil
+                } catch {
+                    scanError = error.localizedDescription
                 }
+                capturedUIImage = nil
             }
             .fullScreenCover(isPresented: $showCamera) {
                 CameraCaptureView(
@@ -150,33 +146,6 @@ struct AddExpenseView: View {
                 .ignoresSafeArea()
             }
         }
-    }
-
-    private func normalizeImage(_ data: Data) -> Data {
-        // HEIF/HEIC → JPEG
-        var result = data
-        if isHeifData(data), let image = UIImage(data: data) {
-            result = image.jpegData(compressionQuality: 0.85) ?? data
-        }
-        // Compress large images to ~2MB max
-        if result.count > 2_000_000, let image = UIImage(data: result) {
-            var quality: CGFloat = 0.8
-            while result.count > 2_000_000 && quality > 0.3 {
-                if let compressed = image.jpegData(compressionQuality: quality) {
-                    result = compressed
-                }
-                quality -= 0.1
-            }
-        }
-        return result
-    }
-
-    private func isHeifData(_ data: Data) -> Bool {
-        guard data.count >= 12 else { return false }
-        let bytes = [UInt8](data.prefix(12))
-        guard bytes[4] == 0x66, bytes[5] == 0x74, bytes[6] == 0x79, bytes[7] == 0x70 else { return false }
-        let subtype = String(bytes: [bytes[8], bytes[9], bytes[10], bytes[11]], encoding: .ascii) ?? ""
-        return subtype == "heic" || subtype == "heix" || subtype == "heif" || subtype == "heim" || subtype == "heis" || subtype == "hevc"
     }
 
     private var receiptSection: some View {
@@ -194,8 +163,11 @@ struct AddExpenseView: View {
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
 
                                     Button {
+                                        guard receiptImages.indices.contains(idx) else { return }
                                         receiptImages.remove(at: idx)
-                                        selectedPhotos.remove(at: min(idx, selectedPhotos.count - 1))
+                                        if selectedPhotos.indices.contains(idx) {
+                                            selectedPhotos.remove(at: idx)
+                                        }
                                         scannedCount = min(scannedCount, receiptImages.count)
                                         scanError = nil
                                     } label: {
@@ -279,6 +251,37 @@ struct AddExpenseView: View {
         } header: {
             Text("Receipt")
         }
+    }
+
+    @MainActor
+    private func loadSelectedPhotos() async {
+        let items = selectedPhotos
+        guard !items.isEmpty else { return }
+
+        var loaded: [Data] = []
+        var firstError: String?
+
+        for (idx, item) in items.enumerated() {
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else {
+                    throw NSError(
+                        domain: "ReceiptPhotoPicker",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Photo \(idx + 1) could not be loaded."]
+                    )
+                }
+                loaded.append(try ReceiptImageNormalizer.jpegData(from: data))
+            } catch {
+                if firstError == nil {
+                    firstError = "Photo \(idx + 1): \(error.localizedDescription)"
+                }
+            }
+        }
+
+        receiptImages = loaded
+        selectedPhotos = []
+        scannedCount = 0
+        scanError = firstError
     }
 
     private var formattedPreview: String {
