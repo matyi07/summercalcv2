@@ -83,10 +83,10 @@ final class WeatherService: ObservableObject {
             summary: summary,
             humidity: humidity,
             feelsLikeCelsius: feelsLike,
-            cloudCover: cloudCover,
-            dewPointCelsius: dewPoint,
             sunrise: sunrise,
-            sunset: sunset
+            sunset: sunset,
+            cloudCover: cloudCover,
+            dewPointCelsius: dewPoint
         )
     }
 
@@ -197,10 +197,10 @@ final class WeatherService: ObservableObject {
             uvIndex: uvIndex,
             visibility: visibility,
             pressure: pressure,
-            cloudCover: cloudCover,
-            dewPointCelsius: dewPoint,
             sunrise: sunrise,
-            sunset: sunset
+            sunset: sunset,
+            cloudCover: cloudCover,
+            dewPointCelsius: dewPoint
         )
         context.insert(snapshot)
         return snapshot
