@@ -133,7 +133,8 @@ final class PlacesService: ObservableObject {
             let candidates = try await googleProvider.searchNearby(query: query, coordinate: coordinate, radiusMeters: radiusMeters)
             await MainActor.run { results = candidates; isLoading = false }
         } catch {
-            await MainActor.run { error = error.localizedDescription; isLoading = false }
+            let err = error
+            await MainActor.run { self.error = err.localizedDescription; isLoading = false }
         }
     }
 

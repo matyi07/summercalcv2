@@ -130,7 +130,7 @@ struct AddEventView: View {
             if settings.authorizationStatus == .denied {
                 await MainActor.run { showPermissionAlert = true }
             } else if settings.authorizationStatus == .notDetermined {
-                _ = await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+                _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
             }
         }
     }

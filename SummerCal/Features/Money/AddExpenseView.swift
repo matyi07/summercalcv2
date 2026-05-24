@@ -82,93 +82,7 @@ struct AddExpenseView: View {
                         .lineLimit(2...4)
                 }
 
-                Section {
-                    if let receiptData, let uiImage = UIImage(data: receiptData) {
-                        VStack(spacing: 8) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(maxHeight: 140)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                            Button(role: .destructive) {
-                                receiptData = nil
-                                selectedPhoto = nil
-                                capturedUIImage = nil
-                                scanCompleted = false
-                                scanError = nil
-                            } label: {
-                                Label("Remove Photo", systemImage: "trash")
-                                    .font(.caption)
-                            }
-                        }
-                    } else {
-                        HStack(spacing: 16) {
-                            Button {
-                                showCamera = true
-                            } label: {
-                                VStack(spacing: 6) {
-                                    Image(systemName: "camera.fill")
-                                        .font(.title2)
-                                    Text("Take Photo")
-                                        .font(.caption)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
-                            }
-                            .buttonStyle(.plain)
-
-                            PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                                VStack(spacing: 6) {
-                                    Image(systemName: "photo.on.rectangle")
-                                        .font(.title2)
-                                    Text("Choose Photo")
-                                        .font(.caption)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    if let receiptData, !scanCompleted, !isScanning {
-                        Button {
-                            Task { await scanReceipt(imageData: receiptData) }
-                        } label: {
-                            Label("Scan Receipt with AI", systemImage: "text.viewfinder")
-                        }
-                    }
-
-                    if isScanning {
-                        HStack {
-                            ProgressView().scaleEffect(0.8)
-                            Text("Scanning receipt...")
-                                .font(.caption)
-                                .foregroundStyle(Color(.systemGray))
-                        }
-                    }
-
-                    if let scanError {
-                        HStack {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.red).font(.caption)
-                            Text(scanError).font(.caption).foregroundColor(.red)
-                        }
-                    }
-
-                    if scanCompleted {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
-                            Text("Receipt scanned — review below")
-                                .font(.caption).foregroundColor(.green)
-                        }
-                    }
-                } header: {
-                    Text("Receipt")
-                }
+                receiptSection
 
                 Section {
                     if amountIsValid {
@@ -229,6 +143,82 @@ struct AddExpenseView: View {
                 )
                 .ignoresSafeArea()
             }
+        }
+    }
+
+    private var receiptSection: some View {
+        Section {
+            if let receiptData, let uiImage = UIImage(data: receiptData) {
+                VStack(spacing: 8) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 140)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    Button(role: .destructive) {
+                        receiptData = nil
+                        selectedPhoto = nil
+                        capturedUIImage = nil
+                        scanCompleted = false
+                        scanError = nil
+                    } label: {
+                        Label("Remove Photo", systemImage: "trash")
+                            .font(.caption)
+                    }
+                }
+            } else {
+                HStack(spacing: 16) {
+                    Button {
+                        showCamera = true
+                    } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: "camera.fill").font(.title2)
+                            Text("Take Photo").font(.caption)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        VStack(spacing: 6) {
+                            Image(systemName: "photo.on.rectangle").font(.title2)
+                            Text("Choose Photo").font(.caption)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            if let receiptData, !scanCompleted, !isScanning {
+                Button {
+                    Task { await scanReceipt(imageData: receiptData) }
+                } label: {
+                    Label("Scan Receipt with AI", systemImage: "text.viewfinder")
+                }
+            }
+            if isScanning {
+                HStack {
+                    ProgressView().scaleEffect(0.8)
+                    Text("Scanning receipt...").font(.caption).foregroundStyle(Color(.systemGray))
+                }
+            }
+            if let scanError {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red).font(.caption)
+                    Text(scanError).font(.caption).foregroundColor(.red)
+                }
+            }
+            if scanCompleted {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                    Text("Receipt scanned — review below").font(.caption).foregroundColor(.green)
+                }
+            }
+        } header: {
+            Text("Receipt")
         }
     }
 
