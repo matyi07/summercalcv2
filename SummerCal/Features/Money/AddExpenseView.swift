@@ -115,6 +115,11 @@ struct AddExpenseView: View {
                     category = entry.category
                     paymentMethod = entry.paymentMethod
                     note = entry.note
+                    // Migrate legacy single-image to array
+                    if entry.receiptImages.isEmpty, let legacy = entry.receiptImageData {
+                        entry.receiptImages = [legacy]
+                        try? modelContext.save()
+                    }
                     receiptImages = entry.receiptImages
                     scannedCount = entry.receiptImages.isEmpty ? 0 : entry.receiptImages.count
                 }
@@ -328,6 +333,7 @@ struct AddExpenseView: View {
             entry.paymentMethod = paymentMethod
             entry.note = note
             entry.receiptImages = receiptImages
+            entry.receiptImageData = receiptImages.first  // back-compat single-image
         } else {
             let entry = ExpenseEntry(
                 date: date,
@@ -335,6 +341,7 @@ struct AddExpenseView: View {
                 category: category,
                 paymentMethod: paymentMethod,
                 note: note,
+                receiptImageData: receiptImages.first,
                 receiptImages: receiptImages
             )
             modelContext.insert(entry)

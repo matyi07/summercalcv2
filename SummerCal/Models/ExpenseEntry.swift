@@ -45,7 +45,8 @@ final class ExpenseEntry {
     var category: ExpenseCategory
     var paymentMethod: String
     var note: String
-    var receiptImages: [Data]
+    var receiptImageData: Data?        // legacy — kept for backward compatibility
+    var receiptImages: [Data]          // current multi-image storage
     var createdAt: Date
 
     init(
@@ -55,6 +56,7 @@ final class ExpenseEntry {
         category: ExpenseCategory = .other,
         paymentMethod: String = "card",
         note: String = "",
+        receiptImageData: Data? = nil,
         receiptImages: [Data] = [],
         createdAt: Date = Date()
     ) {
@@ -64,6 +66,7 @@ final class ExpenseEntry {
         self.category = category
         self.paymentMethod = paymentMethod
         self.note = note
+        self.receiptImageData = receiptImageData
         self.receiptImages = receiptImages
         self.createdAt = createdAt
     }
