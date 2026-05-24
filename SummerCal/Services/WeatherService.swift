@@ -229,9 +229,9 @@ final class WeatherService: ObservableObject {
                 summary: summary,
                 humidity: avgHumidity.isNaN ? nil : avgHumidity,
                 feelsLikeCelsius: nil,
-                cloudCover: maxCloud,
                 highTemp: maxT,
-                lowTemp: minT
+                lowTemp: minT,
+                cloudCover: maxCloud
             )
             context.insert(daily)
             dailySnapshots.append(daily)
