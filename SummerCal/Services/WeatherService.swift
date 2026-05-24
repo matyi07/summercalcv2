@@ -8,18 +8,17 @@ final class WeatherService: ObservableObject {
     @Published var dailyForecast: [WeatherSnapshot] = []
     @Published var isLoading = false
     @Published var error: String?
-    @Published var lastSource: String = ""  // "Apple WeatherKit" or "Open-Meteo"
-
-    private let weatherKitBaseURL = "https://weatherkit.apple.com/api/v1/weather/en"
+    @Published var lastSource: String = ""
 
     // MARK: - Legacy API (TodayView / ContentView compatibility)
 
     func fetchWeather(for coordinate: Coordinate) async {
         await MainActor.run { isLoading = true; error = nil }
         do {
-            let snapshot = try await fetchOpenMeteoCurrent(coordinate: coordinate)
+            let snapshot = try await fetchCurrentWeather(coordinate: coordinate)
             await MainActor.run {
                 self.currentSnapshot = snapshot
+                self.lastSource = "OpenWeatherMap"
                 self.isLoading = false
             }
         } catch {
@@ -30,11 +29,11 @@ final class WeatherService: ObservableObject {
         }
     }
 
-    private func fetchOpenMeteoCurrent(coordinate: Coordinate) async throws -> WeatherSnapshot {
-        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(coordinate.latitude)&longitude=\(coordinate.longitude)&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation_probability,cloud_cover,dew_point_2m&daily=sunrise,sunset&timezone=auto"
-
+    private func fetchCurrentWeather(coordinate: Coordinate) async throws -> WeatherSnapshot {
+        let key = resolveAPIKey()
+        let urlString = "https://api.openweathermap.org/data/2.5/weather?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&units=metric&appid=\(key)"
         guard let url = URL(string: urlString) else {
-            throw NSError(domain: "WeatherService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Open-Meteo URL"])
+            throw NSError(domain: "WeatherService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid OWM URL"])
         }
 
         let (data, _) = try await URLSession.shared.data(from: url)
@@ -42,35 +41,43 @@ final class WeatherService: ObservableObject {
             throw NSError(domain: "WeatherService", code: 500)
         }
 
-        let currentDict = json["current"] as? [String: Any]
-        let temp = currentDict?["temperature_2m"] as? Double ?? 0
-        let humidity = currentDict?["relative_humidity_2m"] as? Double
-        let feelsLike = currentDict?["apparent_temperature"] as? Double
-        let wmoCode = currentDict?["weather_code"] as? Int ?? 0
-        let windSpeed = currentDict?["wind_speed_10m"] as? Double
-        let rawPrecip = currentDict?["precipitation_probability"] as? Double ?? 0
-        let precipChance = rawPrecip / 100.0
-        let cloudCover = currentDict?["cloud_cover"] as? Double
-        let dewPoint = currentDict?["dew_point_2m"] as? Double
+        let main = json["main"] as? [String: Any]
+        let temp = main?["temp"] as? Double ?? 0
+        let humidity = main?["humidity"] as? Double
+        let feelsLike = main?["feels_like"] as? Double
+        let pressure = main?["pressure"] as? Double
+        let tempMin = main?["temp_min"] as? Double
+        let tempMax = main?["temp_max"] as? Double
 
-        // Parse sunrise/sunset from daily section
-        var sunrise: Date? = nil
-        var sunset: Date? = nil
-        if let daily = json["daily"] as? [String: Any],
-           let sunriseTimes = daily["sunrise"] as? [String],
-           let sunsetTimes = daily["sunset"] as? [String] {
-            let isoFormatter = ISO8601DateFormatter()
-            isoFormatter.formatOptions = [.withFullDate, .withColonSeparatorInTime]
-            if let firstSunrise = sunriseTimes.first {
-                sunrise = isoFormatter.date(from: firstSunrise)
-            }
-            if let firstSunset = sunsetTimes.first {
-                sunset = isoFormatter.date(from: firstSunset)
-            }
+        let wind = json["wind"] as? [String: Any]
+        let windSpeedMs = wind?["speed"] as? Double
+        let windSpeedKph = windSpeedMs.map { $0 * 3.6 }
+
+        let weatherArr = json["weather"] as? [[String: Any]]
+        let firstWeather = weatherArr?.first
+        let conditionCode = firstWeather?["id"] as? Int ?? 800
+        let conditionDesc = firstWeather?["description"] as? String ?? "clear sky"
+        let conditionMain = firstWeather?["main"] as? String ?? "Clear"
+
+        let clouds = json["clouds"] as? [String: Any]
+        let cloudCover = clouds?["all"] as? Double
+
+        let visibility = json["visibility"] as? Double
+
+        let sys = json["sys"] as? [String: Any]
+        let sunriseTimestamp = sys?["sunrise"] as? TimeInterval
+        let sunsetTimestamp = sys?["sunset"] as? TimeInterval
+        let sunrise = sunriseTimestamp.map { Date(timeIntervalSince1970: $0) }
+        let sunset = sunsetTimestamp.map { Date(timeIntervalSince1970: $0) }
+
+        let rain = json["rain"] as? [String: Any]
+        let precipMm = rain?["1h"] as? Double
+
+        let condition = WeatherConditionStrings.from(owmCode: conditionCode, description: conditionDesc)
+        var summary = "\(condition), \(String(format: "%.0f", temp))°C"
+        if let precipMm, precipMm > 0 {
+            summary += ", \(String(format: "%.1f", precipMm))mm rain"
         }
-
-        let condition = WeatherConditionStrings.from(wmoCode: wmoCode)
-        let summary = "\(condition), \(String(format: "%.0f", temp))°C\(precipChance > 0.3 ? ", \(Int(precipChance * 100))% rain" : "")"
 
         return WeatherSnapshot(
             latitude: coordinate.latitude,
@@ -79,161 +86,96 @@ final class WeatherService: ObservableObject {
             forecastDate: Date(),
             condition: condition,
             temperatureCelsius: temp,
-            precipitationChance: precipChance,
-            windSpeedKph: windSpeed,
+            precipitationChance: precipMm != nil ? min(precipMm! / 10.0, 1.0) : 0,
+            windSpeedKph: windSpeedKph,
             summary: summary,
-            humidity: humidity,
+            humidity: humidity.map { $0 / 100.0 },
             feelsLikeCelsius: feelsLike,
+            visibility: visibility,
+            pressure: pressure,
+            highTemp: tempMax,
+            lowTemp: tempMin,
             sunrise: sunrise,
             sunset: sunset,
-            cloudCover: cloudCover,
-            dewPointCelsius: dewPoint
+            cloudCover: cloudCover
         )
     }
 
     // MARK: - Comprehensive API (WeatherViewModel)
 
     func fetchWeather(for coordinate: Coordinate, jwt: String?, context: ModelContext) async throws -> (current: WeatherSnapshot, hourly: [WeatherSnapshot], daily: [WeatherSnapshot]) {
-        if let jwt, !jwt.isEmpty {
-            do {
-                let result = try await fetchFromWeatherKit(coordinate: coordinate, jwt: jwt, context: context)
-                await MainActor.run {
-                    self.lastSource = "Apple WeatherKit"
-                    self.currentSnapshot = result.current
-                    self.hourlyForecast = result.hourly
-                    self.dailyForecast = result.daily
-                }
-                return result
-            } catch {
-                let result = try await fetchFromOpenMeteo(coordinate: coordinate, context: context)
-                await MainActor.run {
-                    self.lastSource = "Open-Meteo"
-                    self.currentSnapshot = result.current
-                    self.hourlyForecast = result.hourly
-                    self.dailyForecast = result.daily
-                }
-                return result
+        let key = resolveAPIKey()
+        async let current = fetchCurrentWeather(coordinate: coordinate)
+        async let forecastResult = fetchForecast(coordinate: coordinate, key: key, context: context)
+
+        let currentSnapshot = try await current
+        let (hourly, daily) = try await forecastResult
+
+        await MainActor.run {
+            self.lastSource = "OpenWeatherMap"
+            self.currentSnapshot = currentSnapshot
+            self.hourlyForecast = hourly
+            self.dailyForecast = daily
+        }
+
+        // Fetch air quality in background
+        if let aqi = try? await fetchAirPollution(latitude: coordinate.latitude, longitude: coordinate.longitude, key: key) {
+            await MainActor.run {
+                self.currentSnapshot?.airQualityIndex = aqi
+                try? context.save()
             }
         }
 
-        let result = try await fetchFromOpenMeteo(coordinate: coordinate, context: context)
-        await MainActor.run {
-            self.lastSource = "Open-Meteo"
-            self.currentSnapshot = result.current
-            self.hourlyForecast = result.hourly
-            self.dailyForecast = result.daily
-        }
-        return result
+        context.insert(currentSnapshot)
+        for h in hourly { context.insert(h) }
+        for d in daily { context.insert(d) }
+        try? context.save()
+
+        return (currentSnapshot, hourly, daily)
     }
 
-    // MARK: - WeatherKit REST API
+    // MARK: - OpenWeatherMap Forecast API
 
-    private func fetchFromWeatherKit(coordinate: Coordinate, jwt: String, context: ModelContext) async throws -> (current: WeatherSnapshot, hourly: [WeatherSnapshot], daily: [WeatherSnapshot]) {
-        let urlString = "\(weatherKitBaseURL)/\(coordinate.latitude)/\(coordinate.longitude)?dataSets=currentWeather,forecastHourly,forecastDaily"
+    private func fetchForecast(coordinate: Coordinate, key: String, context: ModelContext) async throws -> (hourly: [WeatherSnapshot], daily: [WeatherSnapshot]) {
+        let urlString = "https://api.openweathermap.org/data/2.5/forecast?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&units=metric&cnt=40&appid=\(key)"
         guard let url = URL(string: urlString) else {
-            throw NSError(domain: "WeatherService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid WeatherKit URL"])
+            throw NSError(domain: "WeatherService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid OWM forecast URL"])
         }
 
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 15
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 500
-            throw NSError(domain: "WeatherService", code: status, userInfo: [NSLocalizedDescriptionKey: "WeatherKit API returned \(status)"])
+        let (data, _) = try await URLSession.shared.data(from: url)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let list = json["list"] as? [[String: Any]] else {
+            throw NSError(domain: "WeatherService", code: 500)
         }
 
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw NSError(domain: "WeatherService", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid WeatherKit JSON"])
-        }
-
-        return parseWeatherKitResponse(json, coordinate: coordinate, context: context)
-    }
-
-    private func parseWeatherKitResponse(_ json: [String: Any], coordinate: Coordinate, context: ModelContext) -> (current: WeatherSnapshot, hourly: [WeatherSnapshot], daily: [WeatherSnapshot]) {
         let now = Date()
-        let current = parseCurrentWeather(json["currentWeather"] as? [String: Any], coordinate: coordinate, now: now, context: context)
-        let hourly = parseHourlyForecast(json["forecastHourly"] as? [String: Any], coordinate: coordinate, now: now, context: context)
-        let daily = parseDailyForecast(json["forecastDaily"] as? [String: Any], coordinate: coordinate, now: now, context: context)
-        return (current, hourly, daily)
-    }
 
-    private func parseCurrentWeather(_ dict: [String: Any]?, coordinate: Coordinate, now: Date, context: ModelContext) -> WeatherSnapshot {
-        let temp = dict?["temperature"] as? Double ?? 0
-        let conditionCode = dict?["conditionCode"] as? String ?? "Clear"
-        let humidity = dict?["humidity"] as? Double
-        let feelsLike = dict?["temperatureApparent"] as? Double
-        let windSpeed = dict?["windSpeed"] as? Double
-        let uvIndex = dict?["uvIndex"] as? Int
-        let visibility = dict?["visibility"] as? Double
-        let pressure = dict?["pressure"] as? Double
-        let precipChance = dict?["precipitationChance"] as? Double ?? 0
-        let cloudCover = dict?["cloudCover"] as? Double
-        let dewPoint = dict?["temperatureDewPoint"] as? Double
-        let sunriseStr = dict?["sunrise"] as? String
-        let sunsetStr = dict?["sunset"] as? String
+        // Parse hourly entries (3-hour intervals)
+        var hourlySnapshots: [WeatherSnapshot] = []
+        for entry in list.prefix(48) {
+            guard let timestamp = entry["dt"] as? TimeInterval else { continue }
+            let forecastDate = Date(timeIntervalSince1970: timestamp)
 
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let isoBasic = ISO8601DateFormatter()
-        isoBasic.formatOptions = [.withInternetDateTime]
+            let main = entry["main"] as? [String: Any]
+            let temp = main?["temp"] as? Double ?? 0
+            let humidity = main?["humidity"] as? Double
+            let feelsLike = main?["feels_like"] as? Double
 
-        let sunrise = sunriseStr.flatMap { isoFormatter.date(from: $0) ?? isoBasic.date(from: $0) }
-        let sunset = sunsetStr.flatMap { isoFormatter.date(from: $0) ?? isoBasic.date(from: $0) }
+            let wind = entry["wind"] as? [String: Any]
+            let windSpeedMs = wind?["speed"] as? Double
+            let windSpeedKph = windSpeedMs.map { $0 * 3.6 }
 
-        let condition = WeatherConditionStrings.from(appleCode: conditionCode)
-        let summary = buildCurrentSummary(condition: condition, temp: temp, feelsLike: feelsLike, precipChance: precipChance)
+            let weatherArr = entry["weather"] as? [[String: Any]]
+            let firstWeather = weatherArr?.first
+            let conditionCode = firstWeather?["id"] as? Int ?? 800
+            let conditionDesc = firstWeather?["description"] as? String ?? "clear sky"
 
-        let snapshot = WeatherSnapshot(
-            latitude: coordinate.latitude,
-            longitude: coordinate.longitude,
-            fetchedAt: now,
-            forecastDate: now,
-            condition: condition,
-            temperatureCelsius: temp,
-            precipitationChance: precipChance,
-            windSpeedKph: windSpeed,
-            summary: summary,
-            humidity: humidity,
-            feelsLikeCelsius: feelsLike,
-            uvIndex: uvIndex,
-            visibility: visibility,
-            pressure: pressure,
-            sunrise: sunrise,
-            sunset: sunset,
-            cloudCover: cloudCover,
-            dewPointCelsius: dewPoint
-        )
-        context.insert(snapshot)
-        return snapshot
-    }
+            let clouds = entry["clouds"] as? [String: Any]
+            let cloudCover = clouds?["all"] as? Double
 
-    private func parseHourlyForecast(_ dict: [String: Any]?, coordinate: Coordinate, now: Date, context: ModelContext) -> [WeatherSnapshot] {
-        guard let hours = dict?["hours"] as? [[String: Any]] else { return [] }
+            let pop = entry["pop"] as? Double ?? 0  // probability of precipitation 0-1
 
-        let isoFull = ISO8601DateFormatter()
-        isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
-        let isoBasic = ISO8601DateFormatter()
-        isoBasic.formatOptions = [.withInternetDateTime]
-
-        return hours.prefix(48).compactMap { hour in
-            guard let timeStr = hour["forecastStart"] as? String else { return nil }
-            let date = isoFull.date(from: timeStr) ?? isoBasic.date(from: timeStr)
-            guard let forecastDate = date else { return nil }
-
-            let temp = hour["temperature"] as? Double ?? 0
-            let conditionCode = hour["conditionCode"] as? String ?? "Clear"
-            let precipChance = hour["precipitationChance"] as? Double ?? 0
-            let windSpeed = hour["windSpeed"] as? Double
-            let humidity = hour["humidity"] as? Double
-            let feelsLike = hour["temperatureApparent"] as? Double
-            let cloudCover = hour["cloudCover"] as? Double
-
-            let condition = WeatherConditionStrings.from(appleCode: conditionCode)
-            let summary = "\(condition), \(String(format: "%.0f", temp))°C"
+            let condition = WeatherConditionStrings.from(owmCode: conditionCode, description: conditionDesc)
 
             let snapshot = WeatherSnapshot(
                 latitude: coordinate.latitude,
@@ -242,241 +184,87 @@ final class WeatherService: ObservableObject {
                 forecastDate: forecastDate,
                 condition: condition,
                 temperatureCelsius: temp,
-                precipitationChance: precipChance,
-                windSpeedKph: windSpeed,
-                summary: summary,
-                humidity: humidity,
+                precipitationChance: pop,
+                windSpeedKph: windSpeedKph,
+                summary: "\(condition), \(String(format: "%.0f", temp))°C",
+                humidity: humidity.map { $0 / 100.0 },
                 feelsLikeCelsius: feelsLike,
                 cloudCover: cloudCover
             )
             context.insert(snapshot)
-            return snapshot
-        }
-    }
-
-    private func parseDailyForecast(_ dict: [String: Any]?, coordinate: Coordinate, now: Date, context: ModelContext) -> [WeatherSnapshot] {
-        guard let days = dict?["days"] as? [[String: Any]] else { return [] }
-
-        let isoFull = ISO8601DateFormatter()
-        isoFull.formatOptions = [.withFullDate]
-
-        let isoDateTime = ISO8601DateFormatter()
-        isoDateTime.formatOptions = [.withInternetDateTime]
-
-        return days.prefix(8).compactMap { day in
-            guard let timeStr = day["forecastStart"] as? String else { return nil }
-            let date = isoFull.date(from: timeStr) ?? isoDateTime.date(from: timeStr)
-            guard let forecastDate = date else { return nil }
-
-            let maxTemp = day["temperatureMax"] as? Double ?? 0
-            let minTemp = day["temperatureMin"] as? Double ?? 0
-            let conditionCode = day["conditionCode"] as? String ?? "Clear"
-            let precipChance = day["precipitationChance"] as? Double ?? 0
-            let windSpeed = day["windSpeed"] as? Double
-            let humidity = day["humidity"] as? Double
-            let sunriseStr = day["sunrise"] as? String
-            let sunsetStr = day["sunset"] as? String
-
-            let isoFormatter = ISO8601DateFormatter()
-            isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let isoBasic = ISO8601DateFormatter()
-            isoBasic.formatOptions = [.withInternetDateTime]
-            let sunrise = sunriseStr.flatMap { isoFormatter.date(from: $0) ?? isoBasic.date(from: $0) }
-            let sunset = sunsetStr.flatMap { isoFormatter.date(from: $0) ?? isoBasic.date(from: $0) }
-
-            let condition = WeatherConditionStrings.from(appleCode: conditionCode)
-            let summary = "\(condition), H:\(String(format: "%.0f", maxTemp))° L:\(String(format: "%.0f", minTemp))°"
-
-            let snapshot = WeatherSnapshot(
-                latitude: coordinate.latitude,
-                longitude: coordinate.longitude,
-                fetchedAt: now,
-                forecastDate: forecastDate,
-                condition: condition,
-                temperatureCelsius: maxTemp,
-                precipitationChance: precipChance,
-                windSpeedKph: windSpeed,
-                summary: summary,
-                humidity: humidity,
-                highTemp: maxTemp,
-                lowTemp: minTemp,
-                sunrise: sunrise,
-                sunset: sunset
-            )
-            context.insert(snapshot)
-            return snapshot
-        }
-    }
-
-    // MARK: - Open-Meteo Fallback
-
-    private func fetchFromOpenMeteo(coordinate: Coordinate, context: ModelContext) async throws -> (current: WeatherSnapshot, hourly: [WeatherSnapshot], daily: [WeatherSnapshot]) {
-        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(coordinate.latitude)&longitude=\(coordinate.longitude)&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation_probability,cloud_cover,dew_point_2m&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m,apparent_temperature,cloud_cover&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset&timezone=auto&forecast_days=8"
-
-        guard let url = URL(string: urlString) else {
-            throw NSError(domain: "WeatherService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Open-Meteo URL"])
+            hourlySnapshots.append(snapshot)
         }
 
-        let (data, _) = try await URLSession.shared.data(from: url)
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw NSError(domain: "WeatherService", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid Open-Meteo JSON"])
-        }
-
-        return parseOpenMeteoResponse(json, coordinate: coordinate, context: context)
-    }
-
-    private func parseOpenMeteoResponse(_ json: [String: Any], coordinate: Coordinate, context: ModelContext) -> (current: WeatherSnapshot, hourly: [WeatherSnapshot], daily: [WeatherSnapshot]) {
-        let now = Date()
-
-        let currentDict = json["current"] as? [String: Any]
-        let temp = currentDict?["temperature_2m"] as? Double ?? 0
-        let humidity = currentDict?["relative_humidity_2m"] as? Double
-        let feelsLike = currentDict?["apparent_temperature"] as? Double
-        let wmoCode = currentDict?["weather_code"] as? Int ?? 0
-        let windSpeed = currentDict?["wind_speed_10m"] as? Double
-        let rawPrecip = currentDict?["precipitation_probability"] as? Double ?? 0
-        let precipChance = rawPrecip / 100.0
-        let cloudCover = currentDict?["cloud_cover"] as? Double
-        let dewPoint = currentDict?["dew_point_2m"] as? Double
-
-        let condition = WeatherConditionStrings.from(wmoCode: wmoCode)
-        let summary = "\(condition), \(String(format: "%.0f", temp))°C\(precipChance > 0.3 ? ", \(Int(precipChance * 100))% rain" : "")"
-
-        let current = WeatherSnapshot(
-            latitude: coordinate.latitude,
-            longitude: coordinate.longitude,
-            fetchedAt: now,
-            forecastDate: now,
-            condition: condition,
-            temperatureCelsius: temp,
-            precipitationChance: precipChance,
-            windSpeedKph: windSpeed,
-            summary: summary,
-            humidity: humidity,
-            feelsLikeCelsius: feelsLike,
-            cloudCover: cloudCover,
-            dewPointCelsius: dewPoint
-        )
-        context.insert(current)
-
-        // Parse daily sunrise/sunset (same for all daily entries, the first day applies)
-        var dailySunrises: [Date?] = []
-        var dailySunsets: [Date?] = []
-        if let daily = json["daily"] as? [String: Any],
-           let sunriseTimes = daily["sunrise"] as? [String],
-           let sunsetTimes = daily["sunset"] as? [String] {
-            let isoFormatter = ISO8601DateFormatter()
-            isoFormatter.formatOptions = [.withFullDate, .withColonSeparatorInTime]
-            dailySunrises = sunriseTimes.map { isoFormatter.date(from: $0) }
-            dailySunsets = sunsetTimes.map { isoFormatter.date(from: $0) }
-        }
-
-        var hourlySnapshots: [WeatherSnapshot] = []
-        if let hourly = json["hourly"] as? [String: Any],
-           let times = hourly["time"] as? [String],
-           let temps = hourly["temperature_2m"] as? [Double],
-           let precipProbs = hourly["precipitation_probability"] as? [Double?],
-           let weatherCodes = hourly["weather_code"] as? [Int?],
-           let windSpeeds = hourly["wind_speed_10m"] as? [Double?] {
-
-            let feelsLikeArr = hourly["apparent_temperature"] as? [Double?]
-            let cloudCovers = hourly["cloud_cover"] as? [Double?]
-
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withFullDate, .withColonSeparatorInTime]
-
-            for i in 0..<min(times.count, 48) {
-                guard let date = formatter.date(from: times[i]) else { continue }
-                let hTemp = i < temps.count ? temps[i] : 0
-                let hPrecip = i < precipProbs.count ? ((precipProbs[i] ?? 0) / 100.0) : 0
-                let hCode = i < weatherCodes.count ? (weatherCodes[i] ?? 0) : 0
-                let hWind = i < windSpeeds.count ? (windSpeeds[i] ?? 0) : 0
-                let hFeels = feelsLikeArr.flatMap { i < $0.count ? $0[i] : nil } ?? nil
-                let hCloud = cloudCovers.flatMap { i < $0.count ? $0[i] : nil } ?? nil
-                let hCondition = WeatherConditionStrings.from(wmoCode: hCode)
-
-                let snapshot = WeatherSnapshot(
-                    latitude: coordinate.latitude,
-                    longitude: coordinate.longitude,
-                    fetchedAt: now,
-                    forecastDate: date,
-                    condition: hCondition,
-                    temperatureCelsius: hTemp,
-                    precipitationChance: hPrecip,
-                    windSpeedKph: hWind,
-                    summary: "\(hCondition), \(String(format: "%.0f", hTemp))°C",
-                    feelsLikeCelsius: hFeels,
-                    cloudCover: hCloud
-                )
-                context.insert(snapshot)
-                hourlySnapshots.append(snapshot)
-            }
+        // Build daily forecast from 3-hour intervals
+        let calendar = Calendar.current
+        var dailyGroups: [Date: [WeatherSnapshot]] = [:]
+        for snapshot in hourlySnapshots {
+            let dayStart = calendar.startOfDay(for: snapshot.forecastDate)
+            dailyGroups[dayStart, default: []].append(snapshot)
         }
 
         var dailySnapshots: [WeatherSnapshot] = []
-        if let daily = json["daily"] as? [String: Any],
-           let times = daily["time"] as? [String],
-           let maxTemps = daily["temperature_2m_max"] as? [Double],
-           let minTemps = daily["temperature_2m_min"] as? [Double],
-           let precipProbs = daily["precipitation_probability_max"] as? [Double?],
-           let weatherCodes = daily["weather_code"] as? [Int?],
-           let windSpeeds = daily["wind_speed_10m_max"] as? [Double?] {
+        let sortedDays = dailyGroups.keys.sorted().prefix(8)
+        for dayStart in sortedDays {
+            guard let entries = dailyGroups[dayStart], !entries.isEmpty else { continue }
+            let maxT = entries.map(\.temperatureCelsius).max() ?? 0
+            let minT = entries.map(\.temperatureCelsius).min() ?? 0
+            let avgHumidity = entries.compactMap(\.humidity).reduce(0, +) / Double(entries.compactMap(\.humidity).count)
+            let maxPrecip = entries.map(\.precipitationChance).max() ?? 0
+            let maxWind = entries.compactMap(\.windSpeedKph).max()
+            let condition = entries.map(\.condition).mostFrequent() ?? "Clear"
+            let maxCloud = entries.compactMap(\.cloudCover).max()
 
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withFullDate]
+            let summary = "\(condition), H:\(String(format: "%.0f", maxT))° L:\(String(format: "%.0f", minT))°"
 
-            for i in 0..<min(times.count, 8) {
-                guard let date = formatter.date(from: times[i]) else { continue }
-                let dMax = i < maxTemps.count ? maxTemps[i] : 0
-                let dMin = i < minTemps.count ? minTemps[i] : 0
-                let dPrecip = i < precipProbs.count ? ((precipProbs[i] ?? 0) / 100.0) : 0
-                let dCode = i < weatherCodes.count ? (weatherCodes[i] ?? 0) : 0
-                let dWind = i < windSpeeds.count ? (windSpeeds[i] ?? 0) : 0
-                let dCondition = WeatherConditionStrings.from(wmoCode: dCode)
-                let sunrise = i < dailySunrises.count ? dailySunrises[i] : nil
-                let sunset = i < dailySunsets.count ? dailySunsets[i] : nil
-
-                let snapshot = WeatherSnapshot(
-                    latitude: coordinate.latitude,
-                    longitude: coordinate.longitude,
-                    fetchedAt: now,
-                    forecastDate: date,
-                    condition: dCondition,
-                    temperatureCelsius: dMax,
-                    precipitationChance: dPrecip,
-                    windSpeedKph: dWind,
-                    summary: "\(dCondition), H:\(String(format: "%.0f", dMax))° L:\(String(format: "%.0f", dMin))°",
-                    highTemp: dMax,
-                    lowTemp: dMin,
-                    sunrise: sunrise,
-                    sunset: sunset
-                )
-                context.insert(snapshot)
-                dailySnapshots.append(snapshot)
-            }
+            let daily = WeatherSnapshot(
+                latitude: coordinate.latitude,
+                longitude: coordinate.longitude,
+                fetchedAt: now,
+                forecastDate: dayStart,
+                condition: condition,
+                temperatureCelsius: maxT,
+                precipitationChance: maxPrecip,
+                windSpeedKph: maxWind,
+                summary: summary,
+                humidity: avgHumidity.isNaN ? nil : avgHumidity,
+                feelsLikeCelsius: nil,
+                cloudCover: maxCloud,
+                highTemp: maxT,
+                lowTemp: minT
+            )
+            context.insert(daily)
+            dailySnapshots.append(daily)
         }
 
-        return (current, hourlySnapshots, dailySnapshots)
+        return (hourlySnapshots, dailySnapshots)
     }
 
-    // MARK: - Air Quality
+    // MARK: - Air Pollution
 
     func fetchAirQuality(latitude: Double, longitude: Double) async throws -> Int? {
-        let urlString = "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=\(latitude)&longitude=\(longitude)&current=european_aqi"
+        let key = resolveAPIKey()
+        return try await fetchAirPollution(latitude: latitude, longitude: longitude, key: key)
+    }
+
+    private func fetchAirPollution(latitude: Double, longitude: Double, key: String) async throws -> Int? {
+        let urlString = "https://api.openweathermap.org/data/2.5/air_pollution?lat=\(latitude)&lon=\(longitude)&appid=\(key)"
         guard let url = URL(string: urlString) else { return nil }
 
         let (data, _) = try await URLSession.shared.data(from: url)
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let current = json["current"] as? [String: Any],
-              let aqi = current["european_aqi"] as? Int else { return nil }
+              let list = json["list"] as? [[String: Any]],
+              let first = list.first,
+              let main = first["main"] as? [String: Any],
+              let aqi = main["aqi"] as? Int else { return nil }
 
         return aqi
     }
 
-    // MARK: - Condition Helpers
+    // MARK: - API Key Resolution
 
-    func mapWeatherCondition(_ code: String) -> String {
-        WeatherConditionStrings.from(appleCode: code)
+    private func resolveAPIKey() -> String {
+        OpenWeatherAPI.defaultKey
     }
 
     // MARK: - Summaries
@@ -555,69 +343,73 @@ final class WeatherService: ObservableObject {
             && snapshot.temperatureCelsius < 30
             && (snapshot.windSpeedKph ?? 0) < 30
     }
+}
 
-    private func buildCurrentSummary(condition: String, temp: Double, feelsLike: Double?, precipChance: Double) -> String {
-        var summary = "\(condition), \(String(format: "%.0f", temp))°C"
-        if let fl = feelsLike {
-            summary += " (feels like \(String(format: "%.0f", fl))°C)"
-        }
-        if precipChance > 0.3 {
-            summary += ", \(Int(precipChance * 100))% rain"
-        }
-        return summary
-    }
+// MARK: - API Key Configuration
+
+enum OpenWeatherAPI {
+    /// OpenWeatherMap API key — used for all weather data requests.
+    static let defaultKey = "83bee33aeab595bba6f3742da3c2f2a1"
 }
 
 // MARK: - Condition String Mapping
 
 enum WeatherConditionStrings {
-    static func from(appleCode: String) -> String {
-        switch appleCode {
-        case "Clear", "MostlyClear", "Hot": return "Clear"
-        case "Cloudy", "MostlyCloudy", "Overcast": return "Cloudy"
-        case "PartlyCloudy", "PartlySunny": return "Partly Cloudy"
-        case "Drizzle", "Rain", "HeavyRain", "FreezingDrizzle", "FreezingRain": return "Rain"
-        case "Snow", "HeavySnow", "Sleet", "Blizzard", "BlowingSnow": return "Snow"
-        case "Windy", "Breezy": return "Windy"
-        case "IsolatedThunderstorms", "ScatteredThunderstorms", "Thunderstorms", "TropicalStorm", "Hurricane": return "Thunderstorm"
-        case "Fog", "Haze", "Smoke": return "Fog"
-        default: return "Clear"
-        }
-    }
-
-    static func from(wmoCode: Int) -> String {
-        switch wmoCode {
-        case 0: return "Clear"
-        case 1: return "Mainly Clear"
-        case 2: return "Partly Cloudy"
-        case 3: return "Overcast"
-        case 45, 48: return "Fog"
-        case 51, 53, 55: return "Drizzle"
-        case 56, 57: return "Freezing Drizzle"
-        case 61, 63, 65: return "Rain"
-        case 66, 67: return "Freezing Rain"
-        case 71, 73, 75: return "Snow"
-        case 77: return "Snow Grains"
-        case 80, 81, 82: return "Rain Showers"
-        case 85, 86: return "Snow Showers"
-        case 95: return "Thunderstorm"
-        case 96, 99: return "Thunderstorm with Hail"
-        default: return "Unknown"
+    /// Map OpenWeatherMap condition code + description to a SummerCal condition label.
+    static func from(owmCode: Int, description: String) -> String {
+        switch owmCode {
+        // Thunderstorm
+        case 200...232: return "Thunderstorm"
+        // Drizzle
+        case 300...321: return "Drizzle"
+        // Rain
+        case 500...504, 520...531: return "Rain"
+        case 511: return "Freezing Rain"
+        // Snow
+        case 600...622: return "Snow"
+        // Atmosphere
+        case 701: return "Mist"
+        case 711: return "Smoke"
+        case 721: return "Haze"
+        case 731, 761: return "Dust"
+        case 741: return "Fog"
+        case 751: return "Sand"
+        case 762: return "Ash"
+        case 771: return "Squall"
+        case 781: return "Tornado"
+        // Clear
+        case 800: return "Clear"
+        // Clouds
+        case 801: return "Partly Cloudy"
+        case 802: return "Scattered Clouds"
+        case 803, 804: return "Cloudy"
+        default: return description.capitalized
         }
     }
 
     static func iconName(for condition: String) -> String {
         switch condition {
-        case "Clear", "Mainly Clear": return "sun.max.fill"
-        case "Partly Cloudy": return "cloud.sun.fill"
+        case "Clear": return "sun.max.fill"
+        case "Partly Cloudy", "Scattered Clouds": return "cloud.sun.fill"
         case "Cloudy", "Overcast": return "cloud.fill"
-        case "Fog", "Haze": return "cloud.fog.fill"
-        case "Drizzle", "Freezing Drizzle": return "cloud.drizzle.fill"
-        case "Rain", "Freezing Rain", "Rain Showers": return "cloud.rain.fill"
-        case "Snow", "Snow Grains", "Snow Showers": return "cloud.snow.fill"
-        case "Windy": return "wind"
-        case "Thunderstorm", "Thunderstorm with Hail": return "cloud.bolt.rain.fill"
+        case "Fog", "Mist", "Haze", "Smoke": return "cloud.fog.fill"
+        case "Drizzle": return "cloud.drizzle.fill"
+        case "Rain", "Freezing Rain": return "cloud.rain.fill"
+        case "Snow": return "cloud.snow.fill"
+        case "Windy", "Squall": return "wind"
+        case "Thunderstorm": return "cloud.bolt.rain.fill"
+        case "Dust", "Sand", "Ash": return "sun.dust.fill"
+        case "Tornado": return "tornado"
         default: return "questionmark"
         }
+    }
+}
+
+// MARK: - Array Extension (most frequent element)
+
+extension Array where Element: Hashable {
+    func mostFrequent() -> Element? {
+        let grouped = Dictionary(grouping: self, by: { $0 })
+        return grouped.max(by: { $0.value.count < $1.value.count })?.key
     }
 }

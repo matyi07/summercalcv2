@@ -271,7 +271,7 @@ struct SettingsView: View {
                     privacyPoint(icon: "calendar", title: "Calendar Data", description: "Your calendar data stays on your device. We access your events locally to provide planning suggestions and smart notifications.")
                     privacyPoint(icon: "location", title: "Location Data", description: "Location is used only locally to show weather and nearby places. Your precise location is never uploaded to our servers.")
                     privacyPoint(icon: "key", title: "API Keys", description: "AI provider API keys are stored securely in the iOS Keychain and are never shared with third parties.")
-                    privacyPoint(icon: "network", title: "Network Requests", description: "Weather data is fetched from Open-Meteo (free, no tracking). Place data comes from OpenStreetMap's Nominatim service. AI requests go directly to your chosen provider.")
+                    privacyPoint(icon: "network", title: "Network Requests", description: "Weather data is fetched from OpenWeatherMap. Place data comes from Google Places or Apple MapKit. AI requests go directly to your chosen provider.")
                     privacyPoint(icon: "icloud", title: "iCloud Sync", description: "If enabled, your data syncs via iCloud. We do not operate our own servers for data storage.")
                 }
             }
