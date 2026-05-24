@@ -53,6 +53,7 @@ struct MoneyView: View {
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 editIncome = entry
+                                showAddIncome = true
                             }
                     }
                     .onDelete { offsets in
@@ -84,6 +85,7 @@ struct MoneyView: View {
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 editExpense = entry
+                                showAddExpense = true
                             }
                     }
                     .onDelete { offsets in
@@ -115,6 +117,7 @@ struct MoneyView: View {
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 editSession = session
+                                showAddWork = true
                             }
                     }
                     .onDelete { offsets in

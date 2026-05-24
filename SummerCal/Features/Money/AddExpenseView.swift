@@ -142,7 +142,7 @@ struct AddExpenseView: View {
                     scanError = nil
                 }
             }
-            .sheet(isPresented: $showCamera) {
+            .fullScreenCover(isPresented: $showCamera) {
                 CameraCaptureView(
                     capturedImage: $capturedUIImage,
                     errorMessage: $scanError
@@ -153,10 +153,22 @@ struct AddExpenseView: View {
     }
 
     private func normalizeImage(_ data: Data) -> Data {
+        // HEIF/HEIC → JPEG
+        var result = data
         if isHeifData(data), let image = UIImage(data: data) {
-            return image.jpegData(compressionQuality: 0.85) ?? data
+            result = image.jpegData(compressionQuality: 0.85) ?? data
         }
-        return data
+        // Compress large images to ~2MB max
+        if result.count > 2_000_000, let image = UIImage(data: result) {
+            var quality: CGFloat = 0.8
+            while result.count > 2_000_000 && quality > 0.3 {
+                if let compressed = image.jpegData(compressionQuality: quality) {
+                    result = compressed
+                }
+                quality -= 0.1
+            }
+        }
+        return result
     }
 
     private func isHeifData(_ data: Data) -> Bool {

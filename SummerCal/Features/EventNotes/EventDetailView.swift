@@ -77,9 +77,12 @@ struct EventDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showEditSheet) {
+        .sheet(item: Binding<CalendarEvent?>(
+            get: { showEditSheet ? event : nil },
+            set: { showEditSheet = $0 != nil }
+        )) { ev in
             NavigationStack {
-                AddEventView(existingEvent: event)
+                AddEventView(existingEvent: ev)
             }
         }
         .sheet(isPresented: $showNoteSheet) {

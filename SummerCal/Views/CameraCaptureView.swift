@@ -32,10 +32,12 @@ struct CameraCaptureView: UIViewControllerRepresentable {
                 parent.capturedImage = image
             }
             picker.dismiss(animated: true)
+            parent.dismiss()
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
             picker.dismiss(animated: true)
+            parent.dismiss()
         }
     }
 }
