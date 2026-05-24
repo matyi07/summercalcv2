@@ -116,6 +116,9 @@ struct PlacesView: View {
                         .font(.caption2)
                         .foregroundStyle(Color(.systemGray))
                     Spacer()
+                    Text("via \(viewModel.placesProviderName)")
+                        .font(.caption2)
+                        .foregroundStyle(Color(.systemGray3))
                 }
             }
         }

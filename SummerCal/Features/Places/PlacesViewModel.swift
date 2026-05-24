@@ -91,6 +91,10 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
     private var placesService: PlacesService?
     private var hasInitialLocation = false
 
+    var placesProviderName: String {
+        placesService?.providerName ?? "Apple MapKit"
+    }
+
     override init() {
         super.init()
         locationManager.delegate = self

@@ -189,6 +189,13 @@ struct WeatherView: View {
                             .foregroundStyle(Color(.systemGray3))
                             .padding(.top, 2)
                     }
+
+                    let source = viewModel.weatherSource
+                    if !source.isEmpty {
+                        Text("Source: \(source)")
+                            .font(.caption2)
+                            .foregroundStyle(Color(.systemGray3))
+                    }
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity)

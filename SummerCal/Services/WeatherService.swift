@@ -8,6 +8,7 @@ final class WeatherService: ObservableObject {
     @Published var dailyForecast: [WeatherSnapshot] = []
     @Published var isLoading = false
     @Published var error: String?
+    @Published var lastSource: String = ""  // "Apple WeatherKit" or "Open-Meteo"
 
     private let weatherKitBaseURL = "https://weatherkit.apple.com/api/v1/weather/en"
 
@@ -97,6 +98,7 @@ final class WeatherService: ObservableObject {
             do {
                 let result = try await fetchFromWeatherKit(coordinate: coordinate, jwt: jwt, context: context)
                 await MainActor.run {
+                    self.lastSource = "Apple WeatherKit"
                     self.currentSnapshot = result.current
                     self.hourlyForecast = result.hourly
                     self.dailyForecast = result.daily
@@ -105,6 +107,7 @@ final class WeatherService: ObservableObject {
             } catch {
                 let result = try await fetchFromOpenMeteo(coordinate: coordinate, context: context)
                 await MainActor.run {
+                    self.lastSource = "Open-Meteo"
                     self.currentSnapshot = result.current
                     self.hourlyForecast = result.hourly
                     self.dailyForecast = result.daily
@@ -115,6 +118,7 @@ final class WeatherService: ObservableObject {
 
         let result = try await fetchFromOpenMeteo(coordinate: coordinate, context: context)
         await MainActor.run {
+            self.lastSource = "Open-Meteo"
             self.currentSnapshot = result.current
             self.hourlyForecast = result.hourly
             self.dailyForecast = result.daily

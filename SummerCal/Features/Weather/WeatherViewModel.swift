@@ -12,6 +12,7 @@ final class WeatherViewModel: NSObject, CLLocationManagerDelegate {
     var locationName: String?
     var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
     var lastUpdated: Date?
+    var weatherSource: String { weatherService.lastSource }
 
     var rainAlertEnabled: Bool = true
     var rainThreshold: Double = 0.5

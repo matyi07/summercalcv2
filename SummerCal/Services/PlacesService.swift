@@ -182,11 +182,12 @@ final class PlacesService: ObservableObject {
     @Published var results: [PlaceCandidate] = []
     @Published var error: String?
 
-    /// Creates a PlacesService. Google API key should come from UserSettings — never hardcoded.
+    /// Creates a PlacesService. Uses Google Places when key is available, falls back to MapKit.
     init(googleApiKey: String?) {
-        self.googleApiKey = (googleApiKey?.isEmpty == false) ? googleApiKey : nil
+        let key = googleApiKey?.isEmpty == false ? googleApiKey! : GoogleAPI.defaultKey
+        self.googleApiKey = key
         self.mapKitProvider = MapKitPlacesProvider()
-        if let key = self.googleApiKey, !key.isEmpty {
+        if !key.isEmpty {
             self.googleProvider = GooglePlacesProvider(apiKey: key)
         }
     }
@@ -234,6 +235,11 @@ final class PlacesService: ObservableObject {
         googleProvider != nil
     }
 
+    /// "Google Places" or "Apple MapKit"
+    var providerName: String {
+        googleProvider != nil ? "Google Places" : "Apple MapKit"
+    }
+
     func popularCategories() -> [String] {
         ["cafe", "gym", "restaurant", "park", "museum", "shopping", "errand"]
     }
@@ -241,4 +247,11 @@ final class PlacesService: ObservableObject {
     private func resolveProvider() -> PlacesProvider {
         googleProvider ?? mapKitProvider
     }
+}
+
+// MARK: - API Key Configuration
+
+enum GoogleAPI {
+    /// Default Google Places API key — override via UserSettings.googlePlacesAPIKey.
+    static let defaultKey = "AIzaSyCchq9xvIlpqqkE2bdTUV8kc3ZadXZPVus"
 }
