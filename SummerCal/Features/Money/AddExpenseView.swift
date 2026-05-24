@@ -427,14 +427,13 @@ struct AddExpenseView: View {
             }
         }
 
-        let avgTotal: Double? = {
-            guard let sum = merged["total"] as? Double,
-                  let cnt = merged["count"] as? Int, cnt > 0 else { return nil }
-            return sum / Double(cnt)
+        let mergedTotal: Double? = {
+            guard let sum = merged["total"] as? Double, sum > 0 else { return nil }
+            return sum
         }()
 
         await MainActor.run {
-            if let total = avgTotal, total > 0 {
+            if let total = mergedTotal, total > 0 {
                 amountText = String(format: "%.2f", total).replacingOccurrences(of: ".", with: decimalSeparator())
             }
             if let dateStr = merged["date"] as? String {

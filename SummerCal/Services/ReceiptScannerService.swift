@@ -72,18 +72,7 @@ final class ReceiptScannerService {
             throw NSError(domain: "ReceiptScanner", code: 500, userInfo: [NSLocalizedDescriptionKey: "Unexpected response format"])
         }
 
-        // Strip markdown code fences if present
-        let jsonStr = content
-            .replacingOccurrences(of: "```json", with: "")
-            .replacingOccurrences(of: "```", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard let jsonData = jsonStr.data(using: .utf8) else {
-            throw NSError(domain: "ReceiptScanner", code: 500, userInfo: [NSLocalizedDescriptionKey: "Failed to parse AI response"])
-        }
-
-        let extraction = try JSONDecoder().decode(ReceiptExtraction.self, from: jsonData)
-        return extraction
+        return try decodeExtraction(from: content)
     }
 
     private func messages(for imageData: Data, provider: String, model: String) async throws -> [[String: Any]] {
@@ -113,7 +102,8 @@ final class ReceiptScannerService {
     private func receiptExtractionPrompt(inputDescription: String) -> String {
         """
         You are a receipt scanner. Extract the following information from \(inputDescription).
-        Respond ONLY with a valid JSON object, no other text. Use null for missing fields.
+        Respond ONLY with a valid JSON object, no markdown or explanatory text. Use null for missing fields.
+        total and tax must be JSON numbers without currency symbols. lineItems must be an array of strings.
 
         {
           "merchantName": "Store name",
@@ -176,6 +166,250 @@ final class ReceiptScannerService {
 
             return text
         }.value
+    }
+
+    private func decodeExtraction(from content: String) throws -> ReceiptExtraction {
+        let cleaned = stripCodeFences(content)
+        guard let jsonString = firstJSONObject(in: cleaned),
+              let jsonData = jsonString.data(using: .utf8) else {
+            throw parseError("AI returned text instead of a JSON receipt object: \(preview(cleaned))")
+        }
+
+        do {
+            let object = try JSONSerialization.jsonObject(with: jsonData)
+            if let dict = object as? [String: Any] {
+                return try validated(extraction(from: receiptDictionary(from: dict)), source: jsonString)
+            }
+            if let array = object as? [[String: Any]], let first = array.first {
+                return try validated(extraction(from: receiptDictionary(from: first)), source: jsonString)
+            }
+            throw parseError("AI returned JSON, but not a receipt object: \(preview(jsonString))")
+        } catch let error as NSError where error.domain == "ReceiptScanner" {
+            throw error
+        } catch {
+            throw parseError("AI returned malformed JSON: \(preview(jsonString))")
+        }
+    }
+
+    private func extraction(from dict: [String: Any]) -> ReceiptExtraction {
+        ReceiptExtraction(
+            merchantName: optionalString(firstValue(in: dict, keys: ["merchantName", "merchant", "storeName", "vendor", "businessName"])),
+            date: optionalString(firstValue(in: dict, keys: ["date", "receiptDate", "purchaseDate", "transactionDate"])),
+            total: optionalDouble(firstValue(in: dict, keys: ["total", "amount", "grandTotal", "totalAmount", "balanceDue", "paid"])),
+            tax: optionalDouble(firstValue(in: dict, keys: ["tax", "salesTax", "vat", "taxAmount"])),
+            currency: optionalString(firstValue(in: dict, keys: ["currency", "currencyCode"])),
+            lineItems: optionalLineItems(firstValue(in: dict, keys: ["lineItems", "items", "products", "charges"])),
+            category: optionalString(firstValue(in: dict, keys: ["category", "expenseCategory"]))
+        )
+    }
+
+    private func validated(_ extraction: ReceiptExtraction, source: String) throws -> ReceiptExtraction {
+        if extraction.merchantName != nil ||
+            extraction.date != nil ||
+            extraction.total != nil ||
+            extraction.tax != nil ||
+            extraction.currency != nil ||
+            extraction.lineItems?.isEmpty == false ||
+            extraction.category != nil {
+            return extraction
+        }
+
+        throw parseError("AI JSON did not include recognizable receipt fields: \(preview(source))")
+    }
+
+    private func receiptDictionary(from dict: [String: Any]) -> [String: Any] {
+        let directKeys = ["merchantName", "merchant", "storeName", "total", "amount", "lineItems", "items"]
+        if firstValue(in: dict, keys: directKeys) != nil {
+            return dict
+        }
+
+        for key in ["receipt", "data", "result", "extraction"] {
+            if let nested = firstValue(in: dict, keys: [key]) as? [String: Any] {
+                return nested
+            }
+        }
+
+        return dict
+    }
+
+    private func firstValue(in dict: [String: Any], keys: [String]) -> Any? {
+        for key in keys {
+            if let value = dict[key], !(value is NSNull) {
+                return value
+            }
+        }
+
+        for key in keys {
+            if let match = dict.first(where: { $0.key.lowercased() == key.lowercased() }),
+               !(match.value is NSNull) {
+                return match.value
+            }
+        }
+
+        return nil
+    }
+
+    private func optionalString(_ value: Any?) -> String? {
+        guard let value, !(value is NSNull) else { return nil }
+        if let dict = value as? [String: Any] {
+            return optionalString(firstValue(in: dict, keys: ["value", "name", "code", "text"]))
+        }
+        if let string = value as? String {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty || trimmed.lowercased() == "null" ? nil : trimmed
+        }
+        if let number = value as? NSNumber {
+            return number.stringValue
+        }
+        return nil
+    }
+
+    private func optionalDouble(_ value: Any?) -> Double? {
+        guard let value, !(value is NSNull) else { return nil }
+        if let dict = value as? [String: Any] {
+            return optionalDouble(firstValue(in: dict, keys: ["amount", "value", "total", "price"]))
+        }
+        if let double = value as? Double { return double }
+        if let int = value as? Int { return Double(int) }
+        if let number = value as? NSNumber { return number.doubleValue }
+        if let string = value as? String {
+            let allowed = CharacterSet(charactersIn: "0123456789.,-")
+            var cleaned = string
+                .components(separatedBy: allowed.inverted)
+                .joined()
+            guard !cleaned.isEmpty else { return nil }
+
+            if cleaned.contains(","), cleaned.contains(".") {
+                let decimalSeparator = (cleaned.lastIndex(of: ",") ?? cleaned.startIndex) > (cleaned.lastIndex(of: ".") ?? cleaned.startIndex) ? "," : "."
+                let thousandsSeparator = decimalSeparator == "," ? "." : ","
+                cleaned = cleaned.replacingOccurrences(of: thousandsSeparator, with: "")
+                cleaned = cleaned.replacingOccurrences(of: decimalSeparator, with: ".")
+            } else if cleaned.contains(",") {
+                let parts = cleaned.split(separator: ",", omittingEmptySubsequences: false)
+                if parts.last?.count == 2 {
+                    cleaned = cleaned.replacingOccurrences(of: ",", with: ".")
+                } else {
+                    cleaned = cleaned.replacingOccurrences(of: ",", with: "")
+                }
+            }
+
+            return Double(cleaned)
+        }
+        return nil
+    }
+
+    private func optionalLineItems(_ value: Any?) -> [String]? {
+        guard let value, !(value is NSNull) else { return nil }
+
+        if let strings = value as? [String] {
+            let cleaned = strings
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            return cleaned.isEmpty ? nil : cleaned
+        }
+
+        if let objects = value as? [[String: Any]] {
+            let items = objects.compactMap { item -> String? in
+                let name = optionalString(firstValue(in: item, keys: ["name", "description", "item", "title"]))
+                let price = optionalDouble(firstValue(in: item, keys: ["price", "amount", "total"]))
+                if let name, let price {
+                    return "\(name) \(String(format: "%.2f", price))"
+                }
+                return name
+            }
+            return items.isEmpty ? nil : items
+        }
+
+        if let array = value as? [Any] {
+            let items = array.compactMap { item -> String? in
+                if let dict = item as? [String: Any] {
+                    let name = optionalString(firstValue(in: dict, keys: ["name", "description", "item", "title"]))
+                    let price = optionalDouble(firstValue(in: dict, keys: ["price", "amount", "total"]))
+                    if let name, let price {
+                        return "\(name) \(String(format: "%.2f", price))"
+                    }
+                    return name
+                }
+                return optionalString(item)
+            }
+            return items.isEmpty ? nil : items
+        }
+
+        if let string = optionalString(value) {
+            let items = string
+                .split(whereSeparator: { $0.isNewline })
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            return items.isEmpty ? nil : items
+        }
+
+        return nil
+    }
+
+    private func stripCodeFences(_ content: String) -> String {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("```") else { return trimmed }
+
+        var lines = trimmed.components(separatedBy: .newlines)
+        if lines.first?.hasPrefix("```") == true {
+            lines.removeFirst()
+        }
+        if lines.last?.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("```") == true {
+            lines.removeLast()
+        }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func firstJSONObject(in text: String) -> String? {
+        var start: String.Index?
+        var depth = 0
+        var inString = false
+        var isEscaped = false
+        var index = text.startIndex
+
+        while index < text.endIndex {
+            let char = text[index]
+
+            if inString {
+                if isEscaped {
+                    isEscaped = false
+                } else if char == "\\" {
+                    isEscaped = true
+                } else if char == "\"" {
+                    inString = false
+                }
+            } else {
+                if char == "\"" {
+                    inString = true
+                } else if char == "{" {
+                    if depth == 0 {
+                        start = index
+                    }
+                    depth += 1
+                } else if char == "}" {
+                    depth -= 1
+                    if depth == 0, let start {
+                        return String(text[start...index])
+                    }
+                    if depth < 0 {
+                        depth = 0
+                        start = nil
+                    }
+                }
+            }
+
+            index = text.index(after: index)
+        }
+
+        return nil
+    }
+
+    private func parseError(_ message: String) -> NSError {
+        NSError(domain: "ReceiptScanner", code: 500, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    private func preview(_ text: String) -> String {
+        String(text.replacingOccurrences(of: "\n", with: " ").prefix(220))
     }
 
     private func apiErrorMessage(from data: Data) -> String? {
