@@ -45,24 +45,8 @@ final class ExpenseEntry {
     var category: ExpenseCategory
     var paymentMethod: String
     var note: String
-    var receiptImageData: Data?           // legacy single-image storage
-    var receiptImagesData: Data?          // JSON-encoded [Data] for multi-image
+    var receiptImageData: Data?
     var createdAt: Date
-
-    @Transient
-    var receiptImages: [Data] {
-        get {
-            guard let data = receiptImagesData, let decoded = try? JSONDecoder().decode([Data].self, from: data) else {
-                if let legacy = receiptImageData { return [legacy] }
-                return []
-            }
-            return decoded
-        }
-        set {
-            receiptImagesData = try? JSONEncoder().encode(newValue)
-            receiptImageData = newValue.first
-        }
-    }
 
     init(
         id: UUID = UUID(),
@@ -72,7 +56,6 @@ final class ExpenseEntry {
         paymentMethod: String = "card",
         note: String = "",
         receiptImageData: Data? = nil,
-        receiptImagesData: Data? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -82,7 +65,6 @@ final class ExpenseEntry {
         self.paymentMethod = paymentMethod
         self.note = note
         self.receiptImageData = receiptImageData
-        self.receiptImagesData = receiptImagesData
         self.createdAt = createdAt
     }
 }

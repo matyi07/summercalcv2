@@ -115,27 +115,28 @@ struct AddExpenseView: View {
                     category = entry.category
                     paymentMethod = entry.paymentMethod
                     note = entry.note
-                    receiptImages = entry.receiptImages  // Transient — handles legacy migration
-                    scannedCount = receiptImages.isEmpty ? 0 : receiptImages.count
+                    if let img = entry.receiptImageData {
+                        receiptImages = [img]
+                        scannedCount = 1
+                    }
                 }
             }
             .onChange(of: selectedPhotos) { _, _ in
                 Task {
-                    var newData: [Data] = []
+                    var loaded: [Data] = []
                     for item in selectedPhotos {
                         if let data = try? await item.loadTransferable(type: Data.self) {
-                            newData.append(normalizeImage(data))
+                            loaded.append(normalizeImage(data))
                         }
                     }
-                    receiptImages = newData
+                    receiptImages = loaded
                     scannedCount = 0
                     scanError = nil
                 }
             }
             .onChange(of: capturedUIImage) { _, image in
                 if let image {
-                    let jpeg = image.jpegData(compressionQuality: 0.85) ?? Data()
-                    receiptImages.append(jpeg)
+                    receiptImages.append(image.jpegData(compressionQuality: 0.85) ?? Data())
                     scannedCount = 0
                     scanError = nil
                 }
@@ -151,7 +152,6 @@ struct AddExpenseView: View {
     }
 
     private func normalizeImage(_ data: Data) -> Data {
-        // HEIF/HEIC → JPEG conversion
         if isHeifData(data), let image = UIImage(data: data) {
             return image.jpegData(compressionQuality: 0.85) ?? data
         }
@@ -161,7 +161,6 @@ struct AddExpenseView: View {
     private func isHeifData(_ data: Data) -> Bool {
         guard data.count >= 12 else { return false }
         let bytes = [UInt8](data.prefix(12))
-        // ISOBMFF: ftyp at offset 4
         guard bytes[4] == 0x66, bytes[5] == 0x74, bytes[6] == 0x79, bytes[7] == 0x70 else { return false }
         let subtype = String(bytes: [bytes[8], bytes[9], bytes[10], bytes[11]], encoding: .ascii) ?? ""
         return subtype == "heic" || subtype == "heix" || subtype == "heif" || subtype == "heim" || subtype == "heis" || subtype == "hevc"
@@ -170,14 +169,61 @@ struct AddExpenseView: View {
     private var receiptSection: some View {
         Section {
             if !receiptImages.isEmpty {
-                galleryPreview
-            } else {
-                addPhotoButtons
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(receiptImages.enumerated()), id: \.offset) { idx, data in
+                            if let uiImage = UIImage(data: data) {
+                                ZStack(alignment: .topTrailing) {
+                                    Image(uiImage: uiImage)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 100, height: 100)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                                    Button {
+                                        receiptImages.remove(at: idx)
+                                        selectedPhotos.remove(at: min(idx, selectedPhotos.count - 1))
+                                        scannedCount = min(scannedCount, receiptImages.count)
+                                        scanError = nil
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.caption)
+                                            .foregroundColor(.white)
+                                            .padding(4)
+                                            .background(Circle().fill(Color.black.opacity(0.6)))
+                                            .padding(2)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
-            if !receiptImages.isEmpty {
-                addPhotoButtons
-                    .padding(.top, 4)
+            HStack(spacing: 16) {
+                Button {
+                    showCamera = true
+                } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: "camera.fill").font(.title2)
+                        Text("Take Photo").font(.caption)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+
+                PhotosPicker(selection: $selectedPhotos, maxSelectionCount: 5, matching: .images) {
+                    VStack(spacing: 6) {
+                        Image(systemName: "photo.on.rectangle").font(.title2)
+                        Text("Choose Photo\(receiptImages.isEmpty ? "" : "s")").font(.caption)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
             }
 
             if !receiptImages.isEmpty, scannedCount < receiptImages.count, !isScanning {
@@ -205,13 +251,12 @@ struct AddExpenseView: View {
                         Button("Retry") {
                             Task { await scanAllReceipts() }
                         }
-                        .font(.caption)
-                        .foregroundColor(.blue)
+                        .font(.caption).foregroundColor(.blue)
                     }
                 }
             }
 
-            if scannedCount > 0 && scannedCount >= receiptImages.count && scanError == nil {
+            if scannedCount > 0, scannedCount >= receiptImages.count, scanError == nil, !receiptImages.isEmpty {
                 HStack {
                     Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
                     Text("Scanned \(scannedCount) receipt\(scannedCount > 1 ? "s" : "") — review below")
@@ -220,66 +265,6 @@ struct AddExpenseView: View {
             }
         } header: {
             Text("Receipt")
-        }
-    }
-
-    private var galleryPreview: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(Array(receiptImages.enumerated()), id: \.offset) { idx, data in
-                    if let uiImage = UIImage(data: data) {
-                        ZStack(alignment: .topTrailing) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 100, height: 100)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                            Button {
-                                receiptImages.remove(at: idx)
-                                selectedPhotos.remove(at: min(idx, selectedPhotos.count - 1))
-                                scannedCount = min(scannedCount, receiptImages.count)
-                                scanError = nil
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.white)
-                                    .padding(4)
-                                    .background(Circle().fill(Color.black.opacity(0.6)))
-                                    .padding(2)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var addPhotoButtons: some View {
-        HStack(spacing: 16) {
-            Button {
-                showCamera = true
-            } label: {
-                VStack(spacing: 6) {
-                    Image(systemName: "camera.fill").font(.title2)
-                    Text("Take Photo").font(.caption)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
-
-            PhotosPicker(selection: $selectedPhotos, maxSelectionCount: 5, matching: .images) {
-                VStack(spacing: 6) {
-                    Image(systemName: "photo.on.rectangle").font(.title2)
-                    Text("Choose Photo\(receiptImages.isEmpty ? "" : "s")").font(.caption)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
         }
     }
 
@@ -327,16 +312,16 @@ struct AddExpenseView: View {
             entry.category = category
             entry.paymentMethod = paymentMethod
             entry.note = note
-            entry.receiptImages = receiptImages  // Transient setter populates backing Data? fields
+            entry.receiptImageData = receiptImages.first
         } else {
             let entry = ExpenseEntry(
                 date: date,
                 amount: amount,
                 category: category,
                 paymentMethod: paymentMethod,
-                note: note
+                note: note,
+                receiptImageData: receiptImages.first
             )
-            entry.receiptImages = receiptImages  // Transient setter
             modelContext.insert(entry)
         }
 
@@ -356,7 +341,7 @@ struct AddExpenseView: View {
         let keychain = KeychainStore.shared
         guard let apiKey = try? keychain.readAPIKey(provider: provider) else {
             isScanning = false
-            scanError = "No API key for \(providerLabel(provider)). Go to Settings > AI Settings to configure it."
+            scanError = "No API key for \(providerLabel(provider)). Configure in Settings > AI Settings."
             return
         }
 
@@ -376,60 +361,59 @@ struct AddExpenseView: View {
         }()
 
         let scanner = ReceiptScannerService()
-        var merged = ReceiptExtraction()
-        var totalSum: Double = 0
-        var totalCount = 0
+        var merged: [String: Any?] = [:]
 
         for (idx, imageData) in receiptImages.enumerated() {
             do {
-                let result = try await scanner.scanReceipt(imageData: imageData, provider: provider, apiKey: apiKey, model: model, baseURL: baseURL)
-                if let total = result.total, total > 0 { totalSum += total; totalCount += 1 }
-                if let merchant = result.merchantName, merged.merchantName == nil { merged.merchantName = merchant }
-                if let dateStr = result.date, merged.date == nil { merged.date = dateStr }
-                if let cat = result.category, merged.category == nil { merged.category = cat }
-                if let cur = result.currency, merged.currency == nil { merged.currency = cur }
-                if let tax = result.tax, merged.tax == nil { merged.tax = tax }
-                if let items = result.lineItems, merged.lineItems == nil { merged.lineItems = items }
-
-                await MainActor.run { scannedCount = idx + 1 }
-            } catch {
-                await MainActor.run {
-                    scanError = "Image \(idx + 1): \(error.localizedDescription)"
-                    scannedCount = idx
+                let result = try await scanner.scanReceipt(
+                    imageData: imageData, provider: provider, apiKey: apiKey,
+                    model: model, baseURL: baseURL
+                )
+                if let t = result.total, t > 0 {
+                    let prev = (merged["total"] as? Double) ?? 0
+                    let cnt = (merged["count"] as? Int) ?? 0
+                    merged["total"] = prev + t
+                    merged["count"] = cnt + 1
                 }
+                if merged["merchantName"] == nil { merged["merchantName"] = result.merchantName }
+                if merged["date"] == nil { merged["date"] = result.date }
+                if merged["category"] == nil { merged["category"] = result.category }
+                if merged["currency"] == nil { merged["currency"] = result.currency }
+                scannedCount = idx + 1
+            } catch {
                 isScanning = false
+                scanError = "Photo \(idx + 1): \(error.localizedDescription)"
+                scannedCount = idx
                 return
             }
         }
 
-        merged.total = totalCount > 0 ? totalSum / Double(totalCount) : nil
+        let avgTotal: Double? = {
+            guard let sum = merged["total"] as? Double,
+                  let cnt = merged["count"] as? Int, cnt > 0 else { return nil }
+            return sum / Double(cnt)
+        }()
 
         await MainActor.run {
-            applyExtraction(merged)
+            if let total = avgTotal, total > 0 {
+                amountText = String(format: "%.2f", total).replacingOccurrences(of: ".", with: decimalSeparator())
+            }
+            if let dateStr = merged["date"] as? String {
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd"
+                if let parsedDate = formatter.date(from: dateStr) { date = parsedDate }
+            }
+            if let merchant = merged["merchantName"] as? String, !merchant.isEmpty {
+                note = merchant + (note.isEmpty ? "" : "\n\(note)")
+            }
+            if let cat = merged["category"] as? String {
+                category = ExpenseCategory.allCases.first { $0.label.lowercased() == cat.lowercased() } ?? .other
+            }
+            if let cur = merged["currency"] as? String {
+                note = note.isEmpty ? "Currency: \(cur)" : "\(note)\nCurrency: \(cur)"
+            }
             isScanning = false
             scanError = nil
-        }
-    }
-
-    private func applyExtraction(_ result: ReceiptExtraction) {
-        if let total = result.total, total > 0 {
-            amountText = String(format: "%.2f", total).replacingOccurrences(of: ".", with: decimalSeparator())
-        }
-        if let dateStr = result.date {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd"
-            if let parsedDate = formatter.date(from: dateStr) {
-                date = parsedDate
-            }
-        }
-        if let merchant = result.merchantName, !merchant.isEmpty {
-            note = merchant + (note.isEmpty ? "" : "\n\(note)")
-        }
-        if let cat = result.category {
-            category = ExpenseCategory.allCases.first { $0.label.lowercased() == cat.lowercased() } ?? .other
-        }
-        if let cur = result.currency {
-            note = note.isEmpty ? "Currency: \(cur)" : "\(note)\nCurrency: \(cur)"
         }
     }
 }

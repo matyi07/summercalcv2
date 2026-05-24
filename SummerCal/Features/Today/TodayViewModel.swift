@@ -94,6 +94,7 @@ final class TodayViewModel {
         weather = fetchedWeather.first
 
         let hourlyDescriptor = FetchDescriptor<WeatherSnapshot>(
+            predicate: #Predicate { $0.forecastDate >= startOfDay },
             sortBy: [SortDescriptor(\.forecastDate)]
         )
         let allSnapshots = (try? modelContext.fetch(hourlyDescriptor)) ?? []
