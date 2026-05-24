@@ -115,13 +115,8 @@ struct AddExpenseView: View {
                     category = entry.category
                     paymentMethod = entry.paymentMethod
                     note = entry.note
-                    // Migrate legacy single-image to array
-                    if entry.receiptImages.isEmpty, let legacy = entry.receiptImageData {
-                        entry.receiptImages = [legacy]
-                        try? modelContext.save()
-                    }
-                    receiptImages = entry.receiptImages
-                    scannedCount = entry.receiptImages.isEmpty ? 0 : entry.receiptImages.count
+                    receiptImages = entry.receiptImages  // Transient — handles legacy migration
+                    scannedCount = receiptImages.isEmpty ? 0 : receiptImages.count
                 }
             }
             .onChange(of: selectedPhotos) { _, _ in
@@ -332,18 +327,16 @@ struct AddExpenseView: View {
             entry.category = category
             entry.paymentMethod = paymentMethod
             entry.note = note
-            entry.receiptImages = receiptImages
-            entry.receiptImageData = receiptImages.first  // back-compat single-image
+            entry.receiptImages = receiptImages  // Transient setter populates backing Data? fields
         } else {
             let entry = ExpenseEntry(
                 date: date,
                 amount: amount,
                 category: category,
                 paymentMethod: paymentMethod,
-                note: note,
-                receiptImageData: receiptImages.first,
-                receiptImages: receiptImages
+                note: note
             )
+            entry.receiptImages = receiptImages  // Transient setter
             modelContext.insert(entry)
         }
 

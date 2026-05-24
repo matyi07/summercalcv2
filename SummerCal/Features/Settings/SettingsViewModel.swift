@@ -53,11 +53,11 @@ final class SettingsViewModel {
         monthlyIncomeGoal = s.monthlyIncomeGoal ?? 0
 
         apiKey = loadAPIKey(for: s.aiProviderKind) ?? ""
-        locationEnabled = s.locationEnabled
-        approximateLocation = s.approximateLocation
-        selectedActivities = Set(s.selectedActivities.split(separator: ",").map(String.init).filter { !$0.isEmpty })
-        energyLevel = s.energyLevel
-        budgetPreference = s.budgetPreference
+        locationEnabled = s.locationEnabled ?? true
+        approximateLocation = s.approximateLocation ?? false
+        selectedActivities = Set((s.selectedActivities ?? "indoor,outdoor,productive,social").split(separator: ",").map(String.init).filter { !$0.isEmpty })
+        energyLevel = s.energyLevel ?? 3
+        budgetPreference = s.budgetPreference ?? "medium"
     }
 
     func saveSettings(modelContext: ModelContext) {

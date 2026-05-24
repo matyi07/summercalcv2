@@ -24,11 +24,11 @@ final class UserSettings {
     var currencyCode: String
     var weatherKitJWT: String?
     var googlePlacesAPIKey: String?
-    var selectedActivities: String  // comma-separated, e.g. "indoor,outdoor,productive"
-    var energyLevel: Double
-    var budgetPreference: String
-    var locationEnabled: Bool
-    var approximateLocation: Bool
+    var selectedActivities: String?  // comma-separated, e.g. "indoor,outdoor,productive"
+    var energyLevel: Double?
+    var budgetPreference: String?
+    var locationEnabled: Bool?
+    var approximateLocation: Bool?
     var createdAt: Date
     var updatedAt: Date
 
@@ -54,11 +54,11 @@ final class UserSettings {
         currencyCode: String = "USD",
         weatherKitJWT: String? = nil,
         googlePlacesAPIKey: String? = nil,
-        selectedActivities: String = "indoor,outdoor,productive,social",
-        energyLevel: Double = 3,
-        budgetPreference: String = "medium",
-        locationEnabled: Bool = true,
-        approximateLocation: Bool = false,
+        selectedActivities: String? = "indoor,outdoor,productive,social",
+        energyLevel: Double? = 3,
+        budgetPreference: String? = "medium",
+        locationEnabled: Bool? = true,
+        approximateLocation: Bool? = false,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
