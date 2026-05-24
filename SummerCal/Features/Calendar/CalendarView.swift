@@ -7,6 +7,7 @@ struct CalendarView: View {
 
     @State private var viewModel = CalendarViewModel()
     @State private var showAddEvent = false
+    @State private var editEvent: CalendarEvent?
 
     @Query(sort: \CalendarEvent.startDate) private var events: [CalendarEvent]
     @Query(sort: \WorkSession.date) private var workSessions: [WorkSession]
@@ -40,6 +41,11 @@ struct CalendarView: View {
         .sheet(isPresented: $showAddEvent) {
             NavigationStack {
                 AddEventView()
+            }
+        }
+        .sheet(item: $editEvent) { event in
+            NavigationStack {
+                AddEventView(existingEvent: event)
             }
         }
         .onAppear {
@@ -189,16 +195,21 @@ struct CalendarView: View {
                     } label: {
                         eventRow(event)
                     }
-                    .swipeActions(edge: .leading) {
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button {
-                            appRouter.navigateToEvent(event.id)
+                            editEvent = event
                         } label: {
                             Label("Edit", systemImage: "pencil")
                         }
                         .tint(.orange)
+
+                        Button(role: .destructive) {
+                            deleteEvent(event)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
                     }
                 }
-                .onDelete(perform: deleteEvents)
             }
         }
         .listStyle(.plain)
@@ -230,12 +241,9 @@ struct CalendarView: View {
         .padding(.vertical, 4)
     }
 
-    private func deleteEvents(at offsets: IndexSet) {
-        for index in offsets {
-            let event = viewModel.eventsOnSelectedDay[index]
-            Task { await NotificationService.shared.cancelAll(forEventId: event.id) }
-            modelContext.delete(event)
-        }
+    private func deleteEvent(_ event: CalendarEvent) {
+        Task { await NotificationService.shared.cancelAll(forEventId: event.id) }
+        modelContext.delete(event)
         try? modelContext.save()
     }
 

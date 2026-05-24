@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import Vision
 
 struct ReceiptExtraction: Codable {
     var merchantName: String?
@@ -14,36 +15,16 @@ struct ReceiptExtraction: Codable {
 final class ReceiptScannerService {
     func scanReceipt(imageData: Data, provider: String, apiKey: String, model: String, baseURL: String?) async throws -> ReceiptExtraction {
         let normalizedImageData = try ReceiptImageNormalizer.jpegData(from: imageData)
-        let base64Image = normalizedImageData.base64EncodedString()
-
-        let prompt = """
-        You are a receipt scanner. Extract the following information from this receipt image.
-        Respond ONLY with a valid JSON object, no other text. Use null for missing fields.
-
-        {
-          "merchantName": "Store name",
-          "date": "YYYY-MM-DD",
-          "total": 0.00,
-          "tax": 0.00,
-          "currency": "USD",
-          "lineItems": ["item1", "item2"],
-          "category": "food|transport|shopping|health|utilities|housing|entertainment|other"
-        }
-        """
 
         guard let url = chatCompletionsURL(provider: provider, baseURL: baseURL) else {
             throw NSError(domain: "ReceiptScanner", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid API URL"])
         }
 
-        let messages: [[String: Any]] = [
-            [
-                "role": "user",
-                "content": [
-                    ["type": "text", "text": prompt],
-                    ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(base64Image)", "detail": "high"]]
-                ]
-            ]
-        ]
+        let messages = try await messages(
+            for: normalizedImageData,
+            provider: provider,
+            model: model
+        )
 
         let requestBody: [String: Any] = [
             "model": model,
@@ -103,6 +84,98 @@ final class ReceiptScannerService {
 
         let extraction = try JSONDecoder().decode(ReceiptExtraction.self, from: jsonData)
         return extraction
+    }
+
+    private func messages(for imageData: Data, provider: String, model: String) async throws -> [[String: Any]] {
+        let prompt = receiptExtractionPrompt(inputDescription: "this receipt image")
+
+        guard supportsImageInput(provider: provider, model: model) else {
+            let recognizedText = try await recognizeText(from: imageData)
+            return [
+                [
+                    "role": "user",
+                    "content": receiptExtractionPrompt(inputDescription: "the OCR text below") + "\n\nOCR text:\n\(recognizedText)"
+                ]
+            ]
+        }
+
+        return [
+            [
+                "role": "user",
+                "content": [
+                    ["type": "text", "text": prompt],
+                    ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(imageData.base64EncodedString())", "detail": "high"]]
+                ]
+            ]
+        ]
+    }
+
+    private func receiptExtractionPrompt(inputDescription: String) -> String {
+        """
+        You are a receipt scanner. Extract the following information from \(inputDescription).
+        Respond ONLY with a valid JSON object, no other text. Use null for missing fields.
+
+        {
+          "merchantName": "Store name",
+          "date": "YYYY-MM-DD",
+          "total": 0.00,
+          "tax": 0.00,
+          "currency": "USD",
+          "lineItems": ["item1", "item2"],
+          "category": "food|transport|shopping|health|utilities|housing|entertainment|other"
+        }
+        """
+    }
+
+    private func supportsImageInput(provider: String, model: String) -> Bool {
+        let normalizedModel = model.lowercased()
+
+        if provider == "deepSeek" { return false }
+        if provider == "anthropic" { return false }
+        if normalizedModel.contains("deepseek") { return false }
+        if normalizedModel.contains("gpt-3.5") { return false }
+        if normalizedModel == "gpt-4" { return false }
+        if normalizedModel.contains("o1") { return false }
+        if provider == "mistral" {
+            return normalizedModel.contains("pixtral") || normalizedModel.contains("vision")
+        }
+        if provider == "openAI" {
+            return normalizedModel.contains("gpt-4o")
+                || normalizedModel.contains("gpt-4.1")
+                || normalizedModel.contains("gpt-4-turbo")
+                || normalizedModel.contains("vision")
+        }
+        if provider == "google" {
+            return normalizedModel.contains("gemini")
+        }
+
+        return false
+    }
+
+    private func recognizeText(from imageData: Data) async throws -> String {
+        try await Task.detached(priority: .userInitiated) {
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = true
+
+            let handler = VNImageRequestHandler(data: imageData, options: [:])
+            try handler.perform([request])
+
+            let lines = (request.results ?? [])
+                .compactMap { $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            let text = lines.joined(separator: "\n")
+            guard !text.isEmpty else {
+                throw NSError(
+                    domain: "ReceiptScanner",
+                    code: 422,
+                    userInfo: [NSLocalizedDescriptionKey: "Could not read text from this receipt photo. Try a clearer, well-lit photo or use an image-capable AI provider."]
+                )
+            }
+
+            return text
+        }.value
     }
 
     private func apiErrorMessage(from data: Data) -> String? {
