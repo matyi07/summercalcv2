@@ -98,10 +98,17 @@ final class TodayViewModel {
         )
         let allSnapshots = (try? modelContext.fetch(hourlyDescriptor)) ?? []
         let todayEnd = endOfDay.addingTimeInterval(3600)
-        hourlyForecast = allSnapshots.filter { snap in
+        let filtered = allSnapshots.filter { snap in
             snap.forecastDate >= Date() && snap.forecastDate < todayEnd
-                && !calendar.isDate(snap.forecastDate, inSameDayAs: calendar.date(byAdding: .day, value: 1, to: Date())!)
         }
+        // Deduplicate by normalized hour to prevent copies from multiple weather fetches
+        var seen: [Int: WeatherSnapshot] = [:]
+        for snap in filtered {
+            let hourKey = Int(snap.forecastDate.timeIntervalSince1970 / 3600)
+            if let existing = seen[hourKey], existing.fetchedAt >= snap.fetchedAt { continue }
+            seen[hourKey] = snap
+        }
+        hourlyForecast = seen.values.sorted(by: { $0.forecastDate < $1.forecastDate })
 
         let incomeDescriptor = FetchDescriptor<IncomeEntry>(
             sortBy: [SortDescriptor(\.date)]

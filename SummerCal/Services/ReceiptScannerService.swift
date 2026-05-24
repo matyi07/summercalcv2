@@ -13,6 +13,7 @@ struct ReceiptExtraction: Codable {
 
 final class ReceiptScannerService {
     func scanReceipt(imageData: Data, provider: String, apiKey: String, model: String, baseURL: String?) async throws -> ReceiptExtraction {
+        let mimeType = detectMimeType(imageData)
         let base64Image = imageData.base64EncodedString()
 
         let prompt = """
@@ -46,7 +47,7 @@ final class ReceiptScannerService {
                 "role": "user",
                 "content": [
                     ["type": "text", "text": prompt],
-                    ["type": "image_url", "image_url": ["url": "data:image/png;base64,\(base64Image)", "detail": "high"]]
+                    ["type": "image_url", "image_url": ["url": "data:\(mimeType);base64,\(base64Image)", "detail": "high"]]
                 ]
             ]
         ]
@@ -105,5 +106,25 @@ final class ReceiptScannerService {
 
         let extraction = try JSONDecoder().decode(ReceiptExtraction.self, from: jsonData)
         return extraction
+    }
+
+    private func detectMimeType(_ data: Data) -> String {
+        if data.count < 4 { return "image/jpeg" }
+        let bytes = [UInt8](data.prefix(12))
+        // JPEG: FF D8 FF
+        if bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+            return "image/jpeg"
+        }
+        // PNG: 89 50 4E 47
+        if bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 {
+            return "image/png"
+        }
+        // HEIF/HEIC: ftyp box at offset 4
+        if data.count >= 12 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 {
+            let subtype = String(bytes: [bytes[8], bytes[9], bytes[10], bytes[11]], encoding: .ascii) ?? ""
+            if subtype == "heic" || subtype == "heix" { return "image/heic" }
+            if subtype == "heif" || subtype == "heim" || subtype == "heis" || subtype == "hevc" { return "image/heif" }
+        }
+        return "image/jpeg" // fallback
     }
 }

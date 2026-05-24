@@ -14,6 +14,10 @@ struct CalendarView: View {
     private let columns = Array(repeating: GridItem(.flexible()), count: 7)
 
     var body: some View {
+        // Ensure ViewModel is in sync before rendering
+        let _ = viewModel.refreshEvents(with: events)
+        let _ = viewModel.refreshWorkSessions(with: workSessions)
+
         VStack(spacing: 0) {
             monthHeader
 
@@ -188,6 +192,14 @@ struct CalendarView: View {
                         appRouter.navigateToEvent(event.id)
                     } label: {
                         eventRow(event)
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button {
+                            appRouter.navigateToEvent(event.id)
+                        } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        .tint(.orange)
                     }
                 }
                 .onDelete(perform: deleteEvents)

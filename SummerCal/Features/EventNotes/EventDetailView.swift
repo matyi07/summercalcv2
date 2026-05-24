@@ -403,17 +403,35 @@ struct EventDetailView: View {
 
     private var weatherTab: some View {
         VStack(spacing: 12) {
-            let eventWeather = weatherSnapshots.filter { snapshot in
-                guard let ev = event else { return false }
-                return Calendar.current.isDate(snapshot.forecastDate, inSameDayAs: ev.startDate)
-            }
-
-            if eventWeather.isEmpty {
-                emptyTabState("No weather data available")
-            } else {
-                ForEach(eventWeather) { snapshot in
-                    weatherCard(snapshot)
+            if let ev = event {
+                // Filter to snapshots within the event's time window
+                let eventWeather = weatherSnapshots.filter { snapshot in
+                    snapshot.forecastDate >= ev.startDate && snapshot.forecastDate <= ev.endDate
                 }
+
+                if eventWeather.isEmpty {
+                    // Fall back to same-day weather
+                    let dayWeather = weatherSnapshots.filter { snapshot in
+                        Calendar.current.isDate(snapshot.forecastDate, inSameDayAs: ev.startDate)
+                    }
+                    if dayWeather.isEmpty {
+                        emptyTabState("No weather data for event time")
+                    } else {
+                        Text("No hourly data for event window — showing today's forecast")
+                            .font(.caption)
+                            .foregroundColor(Color(.systemGray))
+                            .padding(.horizontal)
+                        ForEach(dayWeather.prefix(6)) { snapshot in
+                            weatherCard(snapshot)
+                        }
+                    }
+                } else {
+                    ForEach(eventWeather.prefix(8)) { snapshot in
+                        weatherCard(snapshot)
+                    }
+                }
+            } else {
+                emptyTabState("Loading event...")
             }
         }
     }

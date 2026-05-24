@@ -116,10 +116,16 @@ final class CalendarViewModel {
             return .green
         }
 
+        // All-day events fill the entire active window
+        let hasAllDayEvent = dayEvents.contains { $0.isAllDay }
+        if hasAllDayEvent {
+            return .red
+        }
+
         var gaps: [DateInterval] = []
         var cursor = activeStart
         let sorted = dayEvents.sorted(by: { $0.startDate < $1.startDate })
-        for event in sorted {
+        for event in sorted where !event.isAllDay {
             let evStart = max(event.startDate, activeStart)
             let evEnd = min(event.endDate, activeEnd)
             if evStart > cursor {

@@ -53,12 +53,11 @@ final class SettingsViewModel {
         monthlyIncomeGoal = s.monthlyIncomeGoal ?? 0
 
         apiKey = loadAPIKey(for: s.aiProviderKind) ?? ""
-        locationEnabled = true
-        approximateLocation = false
-
-        if let activitiesData = try? JSONDecoder().decode([String].self, from: Data("[\"indoor\",\"outdoor\",\"productive\",\"social\"]".utf8)) {
-            selectedActivities = Set(activitiesData)
-        }
+        locationEnabled = s.locationEnabled
+        approximateLocation = s.approximateLocation
+        selectedActivities = Set(s.selectedActivities.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+        energyLevel = s.energyLevel
+        budgetPreference = s.budgetPreference
     }
 
     func saveSettings(modelContext: ModelContext) {
@@ -77,6 +76,11 @@ final class SettingsViewModel {
         s.aiMaxTokens = maxTokens
         s.currencyCode = currencyCode
         s.monthlyIncomeGoal = monthlyIncomeGoal
+        s.selectedActivities = Array(selectedActivities).joined(separator: ",")
+        s.energyLevel = energyLevel
+        s.budgetPreference = budgetPreference
+        s.locationEnabled = locationEnabled
+        s.approximateLocation = approximateLocation
         s.updatedAt = Date()
 
         if !apiKey.isEmpty {

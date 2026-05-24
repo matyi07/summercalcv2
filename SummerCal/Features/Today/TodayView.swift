@@ -36,11 +36,11 @@ struct TodayView: View {
                 if let next = viewModel.nextEvent {
                     nextEventCard(next)
                 }
-                if !viewModel.todaysEvents.isEmpty {
-                    todaysEventsSection
-                }
                 if !viewModel.hourlyForecast.isEmpty {
                     hourlyForecastSection
+                }
+                if !viewModel.todaysEvents.isEmpty {
+                    todaysEventsSection
                 }
                 freeDaySummaryCard
                 if !viewModel.suggestions.isEmpty {

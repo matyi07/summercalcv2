@@ -45,7 +45,7 @@ final class ExpenseEntry {
     var category: ExpenseCategory
     var paymentMethod: String
     var note: String
-    var receiptImageData: Data?
+    var receiptImages: [Data]
     var createdAt: Date
 
     init(
@@ -55,7 +55,7 @@ final class ExpenseEntry {
         category: ExpenseCategory = .other,
         paymentMethod: String = "card",
         note: String = "",
-        receiptImageData: Data? = nil,
+        receiptImages: [Data] = [],
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -64,7 +64,7 @@ final class ExpenseEntry {
         self.category = category
         self.paymentMethod = paymentMethod
         self.note = note
-        self.receiptImageData = receiptImageData
+        self.receiptImages = receiptImages
         self.createdAt = createdAt
     }
 }
