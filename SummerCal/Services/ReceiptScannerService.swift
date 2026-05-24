@@ -68,17 +68,21 @@ final class ReceiptScannerService {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw NSError(domain: "ReceiptScanner", code: 500, userInfo: [NSLocalizedDescriptionKey: "No response"])
+            throw NSError(domain: "ReceiptScanner", code: 500, userInfo: [NSLocalizedDescriptionKey: "No response from server"])
         }
 
-        if httpResponse.statusCode == 401 {
-            throw NSError(domain: "ReceiptScanner", code: 401, userInfo: [NSLocalizedDescriptionKey: "Invalid API key. Check your AI settings."])
-        }
-        if httpResponse.statusCode == 429 {
-            throw NSError(domain: "ReceiptScanner", code: 429, userInfo: [NSLocalizedDescriptionKey: "Rate limited. Try again later."])
-        }
-        if httpResponse.statusCode != 200 {
-            throw NSError(domain: "ReceiptScanner", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned status \(httpResponse.statusCode)"])
+        switch httpResponse.statusCode {
+        case 200: break
+        case 401, 403:
+            throw NSError(domain: "ReceiptScanner", code: 401, userInfo: [NSLocalizedDescriptionKey: "Invalid API key. Check AI Settings."])
+        case 429:
+            throw NSError(domain: "ReceiptScanner", code: 429, userInfo: [NSLocalizedDescriptionKey: "Rate limited. Try again in a minute."])
+        case 400:
+            throw NSError(domain: "ReceiptScanner", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid image or unsupported format."])
+        case 404:
+            throw NSError(domain: "ReceiptScanner", code: 404, userInfo: [NSLocalizedDescriptionKey: "API endpoint not found. Check the base URL in AI Settings."])
+        default:
+            throw NSError(domain: "ReceiptScanner", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server error (\(httpResponse.statusCode)). Try again later."])
         }
 
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],

@@ -39,11 +39,14 @@ struct TodayView: View {
                 if !viewModel.todaysEvents.isEmpty {
                     todaysEventsSection
                 }
-                if viewModel.isFreeDay {
-                    freeDayBanner
+                if !viewModel.hourlyForecast.isEmpty {
+                    hourlyForecastSection
                 }
+                freeDaySummaryCard
                 if !viewModel.suggestions.isEmpty {
                     suggestionsSection
+                } else if let err = viewModel.suggestionError {
+                    suggestionErrorCard(err)
                 }
                 moneyCard
             }
@@ -218,23 +221,86 @@ struct TodayView: View {
         }
     }
 
-    private var freeDayBanner: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "sun.max")
-                .font(.largeTitle)
-                .foregroundColor(.orange)
-
-            Text("Your day is mostly free.")
+    private var hourlyForecastSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Hourly Forecast")
                 .font(.headline)
 
-            Text("Want a plan based on weather and places nearby?")
-                .font(.subheadline)
-                .foregroundColor(Color(.systemGray))
-                .multilineTextAlignment(.center)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(viewModel.hourlyForecast.prefix(12).enumerated()), id: \.element.id) { _, snap in
+                        VStack(spacing: 6) {
+                            Text(hourLabel(snap.forecastDate))
+                                .font(.caption2)
+                                .foregroundStyle(Color(.systemGray))
+                            Image(systemName: weatherIcon(for: snap.condition))
+                                .font(.title3)
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(.blue.gradient)
+                            Text("\(Int(snap.temperatureCelsius))°C")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                            if let wind = snap.windSpeedKph {
+                                Text("\(Int(wind)) km/h")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color(.systemGray))
+                            }
+                            Text("\(Int(snap.precipitationChance * 100))%")
+                                .font(.caption2)
+                                .foregroundStyle(snap.precipitationChance > 0.3 ? .blue : Color(.systemGray3))
+                        }
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 10)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemGray6)))
+                    }
+
+                    if viewModel.hourlyForecast.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "clock.badge.exclamationmark")
+                                .font(.title2)
+                                .foregroundColor(Color(.systemGray))
+                            Text("No hourly data available")
+                                .font(.caption)
+                                .foregroundStyle(Color(.systemGray))
+                        }
+                        .padding(20)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    private func hourLabel(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "ha"
+        return formatter.string(from: date)
+    }
+
+    private var freeDaySummaryCard: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: viewModel.isFreeDay ? "sun.max" : "calendar")
+                    .font(.title2)
+                    .foregroundColor(viewModel.isFreeDay ? .orange : Color(.systemGray))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(viewModel.freeDaySummary)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    if !viewModel.freeWindows.isEmpty {
+                        Text(freeWindowsSummary)
+                            .font(.caption)
+                            .foregroundColor(Color(.systemGray))
+                    }
+                }
+                Spacer()
+            }
 
             Button {
                 Task {
                     viewModel.isLoadingSuggestions = true
+                    viewModel.suggestionError = nil
                     await viewModel.refreshSuggestions(modelContext: modelContext, weather: viewModel.weather, location: locationService.currentCoordinate, settings: UserSettings.current(in: modelContext))
                     viewModel.isLoadingSuggestions = false
                 }
@@ -244,17 +310,41 @@ struct TodayView: View {
                         ProgressView().tint(.white)
                     }
                     Text("Get Suggestions")
-                        .font(.headline)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
                         .foregroundColor(.white)
                 }
-                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .background(Capsule().fill(Color.orange))
             }
         }
         .padding()
-        .frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)).shadow(color: .black.opacity(0.05), radius: 4))
+    }
+
+    private var freeWindowsSummary: String {
+        let totalMin = Int((viewModel.freeWindows.reduce(0.0) { $0 + $1.duration }) / 60.0)
+        let h = totalMin / 60
+        let m = totalMin % 60
+        if h > 0 && m > 0 { return "\(h)h \(m)m available" }
+        if h > 0 { return "\(h)h available" }
+        return "\(m)m available"
+    }
+
+    private func suggestionErrorCard(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundColor(.orange)
+                .font(.caption)
+            Text(message)
+                .font(.caption)
+                .foregroundColor(Color(.systemGray))
+            Spacer()
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.1)))
+        .padding(.horizontal)
     }
 
     private var suggestionsSection: some View {

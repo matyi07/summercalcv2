@@ -20,6 +20,8 @@ struct AddExpenseView: View {
     @State private var isScanning: Bool = false
     @State private var scanError: String?
     @State private var scanCompleted: Bool = false
+    @State private var showCamera: Bool = false
+    @State private var capturedUIImage: UIImage?
 
     var onSave: (() -> Void)?
 
@@ -81,68 +83,87 @@ struct AddExpenseView: View {
                 }
 
                 Section {
-                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                        HStack {
-                            if let receiptData, let uiImage = UIImage(data: receiptData) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(maxHeight: 120)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                            } else {
-                                Label("Add Receipt Photo", systemImage: "doc.text.viewfinder")
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .onChange(of: selectedPhoto) { _, newItem in
-                        Task {
-                            if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                                receiptData = data
+                    if let receiptData, let uiImage = UIImage(data: receiptData) {
+                        VStack(spacing: 8) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxHeight: 140)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                            Button(role: .destructive) {
+                                receiptData = nil
+                                selectedPhoto = nil
+                                capturedUIImage = nil
                                 scanCompleted = false
                                 scanError = nil
+                            } label: {
+                                Label("Remove Photo", systemImage: "trash")
+                                    .font(.caption)
                             }
+                        }
+                    } else {
+                        HStack(spacing: 16) {
+                            Button {
+                                showCamera = true
+                            } label: {
+                                VStack(spacing: 6) {
+                                    Image(systemName: "camera.fill")
+                                        .font(.title2)
+                                    Text("Take Photo")
+                                        .font(.caption)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
+                            }
+                            .buttonStyle(.plain)
+
+                            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                                VStack(spacing: 6) {
+                                    Image(systemName: "photo.on.rectangle")
+                                        .font(.title2)
+                                    Text("Choose Photo")
+                                        .font(.caption)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
-                    if let receiptData, !scanCompleted {
-                        if isScanning {
-                            HStack {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("Scanning receipt...")
-                                    .font(.caption)
-                                    .foregroundStyle(Color(.systemGray))
-                            }
-                        } else {
-                            Button {
-                                Task { await scanReceipt(imageData: receiptData) }
-                            } label: {
-                                Label("Scan Receipt with AI", systemImage: "text.viewfinder")
-                                    .font(.subheadline)
-                            }
+                    if let receiptData, !scanCompleted, !isScanning {
+                        Button {
+                            Task { await scanReceipt(imageData: receiptData) }
+                        } label: {
+                            Label("Scan Receipt with AI", systemImage: "text.viewfinder")
+                        }
+                    }
+
+                    if isScanning {
+                        HStack {
+                            ProgressView().scaleEffect(0.8)
+                            Text("Scanning receipt...")
+                                .font(.caption)
+                                .foregroundStyle(Color(.systemGray))
                         }
                     }
 
                     if let scanError {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.red)
-                                .font(.caption)
-                            Text(scanError)
-                                .font(.caption)
-                                .foregroundColor(.red)
+                                .foregroundColor(.red).font(.caption)
+                            Text(scanError).font(.caption).foregroundColor(.red)
                         }
                     }
 
                     if scanCompleted {
                         HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
+                            Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
                             Text("Receipt scanned — review below")
-                                .font(.caption)
-                                .foregroundColor(.green)
+                                .font(.caption).foregroundColor(.green)
                         }
                     }
                 } header: {
@@ -185,6 +206,29 @@ struct AddExpenseView: View {
                     receiptData = entry.receiptImageData
                 }
             }
+            .onChange(of: selectedPhoto) { _, newItem in
+                Task {
+                    if let data = try? await newItem?.loadTransferable(type: Data.self) {
+                        receiptData = data
+                        scanCompleted = false
+                        scanError = nil
+                    }
+                }
+            }
+            .onChange(of: capturedUIImage) { _, image in
+                if let image {
+                    receiptData = image.jpegData(compressionQuality: 0.85)
+                    scanCompleted = false
+                    scanError = nil
+                }
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraCaptureView(
+                    capturedImage: $capturedUIImage,
+                    errorMessage: $scanError
+                )
+                .ignoresSafeArea()
+            }
         }
     }
 
@@ -198,6 +242,18 @@ struct AddExpenseView: View {
 
     private func decimalSeparator() -> String {
         Locale.current.decimalSeparator ?? "."
+    }
+
+    private func providerLabel(_ key: String) -> String {
+        switch key {
+        case "openAI": return "OpenAI"
+        case "deepSeek": return "DeepSeek"
+        case "anthropic": return "Anthropic"
+        case "custom": return "Custom"
+        case "google": return "Google AI"
+        case "mistral": return "Mistral"
+        default: return key
+        }
     }
 
     private func paymentIcon(_ method: String) -> String {
@@ -248,23 +304,21 @@ struct AddExpenseView: View {
         let keychain = KeychainStore.shared
         guard let apiKey = try? keychain.readAPIKey(provider: provider) else {
             isScanning = false
-            scanError = "No API key configured. Set one in Settings > AI Settings."
+            scanError = "No API key for \(providerLabel(provider)). Go to Settings > AI Settings to configure it."
             return
         }
 
-        let model: String
-        switch provider {
-        case "openAI": model = "gpt-4o"
-        case "claude": model = "claude-3-5-sonnet-latest"
-        case "deepSeek": model = "deepseek-chat"
-        case "openAICompatible": model = settings.aiModelName.isEmpty ? "gpt-4o" : settings.aiModelName
-        default: model = "gpt-4o"
-        }
+        let model = settings.aiModelName.isEmpty
+            ? (AIProviderKind.fromSettings(provider)?.defaultModel ?? "gpt-4o")
+            : settings.aiModelName
 
         let baseURL: String? = {
             switch provider {
             case "openAI": return nil
             case "deepSeek": return "https://api.deepseek.com"
+            case "custom": return settings.aiBaseURL
+            case "google": return "https://generativelanguage.googleapis.com/v1beta/openai"
+            case "mistral": return "https://api.mistral.ai"
             default: return settings.aiBaseURL
             }
         }()

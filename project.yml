@@ -5,6 +5,11 @@ options:
     iOS: "17.0"
   xcodeVersion: "15.0"
 
+packages:
+  GoogleMaps:
+    url: https://github.com/googlemaps/ios-maps-sdk
+    from: "9.4.0"
+
 settings:
   base:
     SWIFT_VERSION: "5.9"
@@ -19,6 +24,9 @@ targets:
       - path: SummerCal
         excludes:
           - "Package.swift"
+    dependencies:
+      - package: GoogleMaps
+        product: GoogleMaps
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.summercal.v2

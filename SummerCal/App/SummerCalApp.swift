@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
+import GoogleMaps
 
 @main
 struct SummerCalApp: App {
@@ -35,6 +36,10 @@ struct SummerCalApp: App {
             fatalError("Failed to create ModelContainer: \(error)")
         }
     }()
+
+    init() {
+        GMSServices.provideAPIKey(GoogleAPI.defaultKey)
+    }
 
     var body: some Scene {
         WindowGroup {

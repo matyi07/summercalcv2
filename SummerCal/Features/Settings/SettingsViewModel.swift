@@ -90,9 +90,18 @@ final class SettingsViewModel {
         isTestingConnection = true
         testConnectionResult = nil
 
-        let urlString = aiBaseURL.isEmpty
-            ? "https://api.openai.com/v1/models"
-            : "\(aiBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")))/models"
+        let baseURL: String
+        switch aiProviderKind {
+        case "deepSeek":  baseURL = "https://api.deepseek.com"
+        case "openAI":    baseURL = "https://api.openai.com"
+        case "anthropic": baseURL = "https://api.anthropic.com"
+        case "custom":    baseURL = aiBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        default:
+            baseURL = aiBaseURL.isEmpty
+                ? "https://api.openai.com"
+                : aiBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        }
+        let urlString = "\(baseURL)/models"
 
         guard let url = URL(string: urlString) else {
             testConnectionResult = "Invalid URL"
@@ -151,59 +160,19 @@ final class SettingsViewModel {
     }
 
     func saveAPIKey(_ key: String, for provider: String) {
-        let service = "com.summercal.apikey"
-        let account = provider
-        let data = Data(key.utf8)
-
-        let deleteQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        SecItemDelete(deleteQuery as CFDictionary)
-
-        let addQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
-        ]
-        SecItemAdd(addQuery as CFDictionary, nil)
+        try? KeychainStore.shared.saveAPIKey(provider: provider, key: key)
     }
 
     func loadAPIKey(for provider: String) -> String? {
-        let service = "com.summercal.apikey"
-        let account = provider
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-
-        guard status == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        try? KeychainStore.shared.readAPIKey(provider: provider)
     }
 
     func deleteAPIKey(for provider: String) {
-        let service = "com.summercal.apikey"
-        let account = provider
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        SecItemDelete(query as CFDictionary)
+        try? KeychainStore.shared.deleteAPIKey(provider: provider)
     }
 
     private func deleteAllAPIKeys() {
-        let providers = ["openAI", "anthropic", "google", "mistral", "custom"]
+        let providers = ["openAI", "anthropic", "google", "mistral", "deepSeek", "custom"]
         for provider in providers {
             deleteAPIKey(for: provider)
         }

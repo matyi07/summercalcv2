@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 struct AddEventView: View {
     @Environment(\.modelContext) private var modelContext
@@ -17,6 +18,7 @@ struct AddEventView: View {
     @State private var isOutdoor: Bool = false
     @State private var notificationEnabled: Bool = false
     @State private var reminderMinutesBefore: Int = 30
+    @State private var showPermissionAlert: Bool = false
 
     private let categories = ["general", "meeting", "workout", "appointment", "travel", "social", "errand"]
     private let reminderOptions = [0, 5, 10, 15, 30, 60, 1440]
@@ -61,6 +63,9 @@ struct AddEventView: View {
 
                 Section {
                     Toggle("Enable Reminder", isOn: $notificationEnabled)
+                        .onChange(of: notificationEnabled) { _, enabled in
+                            if enabled { checkNotificationPermission() }
+                        }
                     if notificationEnabled {
                         Picker("Remind", selection: $reminderMinutesBefore) {
                             Text("At time of event").tag(0)
@@ -90,19 +95,42 @@ struct AddEventView: View {
                     .disabled(title.isEmpty)
                 }
             }
-            .onAppear {
-                if let event = existingEvent {
-                    title = event.title
-                    startDate = event.startDate
-                    endDate = event.endDate
-                    isAllDay = event.isAllDay
-                    location = event.location ?? ""
-                    notes = event.notes ?? ""
-                    category = event.category ?? "general"
-                    isOutdoor = event.isOutdoor
-                    notificationEnabled = event.notificationEnabled
-                    reminderMinutesBefore = event.reminderMinutesBefore
+        .onAppear {
+            if let event = existingEvent {
+                title = event.title
+                startDate = event.startDate
+                endDate = event.endDate
+                isAllDay = event.isAllDay
+                location = event.location ?? ""
+                notes = event.notes ?? ""
+                category = event.category ?? "general"
+                isOutdoor = event.isOutdoor
+                notificationEnabled = event.notificationEnabled
+                reminderMinutesBefore = event.reminderMinutesBefore
+            }
+        }
+        .alert("Notifications Disabled", isPresented: $showPermissionAlert) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
                 }
+            }
+            Button("Cancel", role: .cancel) {
+                notificationEnabled = false
+            }
+        } message: {
+            Text("Notifications are disabled for SummerCal. Enable them in Settings to receive event reminders.")
+        }
+        }
+    }
+
+    private func checkNotificationPermission() {
+        Task {
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            if settings.authorizationStatus == .denied {
+                await MainActor.run { showPermissionAlert = true }
+            } else if settings.authorizationStatus == .notDetermined {
+                _ = await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
             }
         }
     }

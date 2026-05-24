@@ -99,6 +99,19 @@ struct EventDetailView: View {
         }
     }
 
+    func reminderLabel(_ minutes: Int) -> String {
+        switch minutes {
+        case 0: return "at event time"
+        case 5: return "5 min before"
+        case 10: return "10 min before"
+        case 15: return "15 min before"
+        case 30: return "30 min before"
+        case 60: return "1 hour before"
+        case 1440: return "1 day before"
+        default: return "\(minutes) min before"
+        }
+    }
+
     private func fetchEvent() {
         let descriptor = FetchDescriptor<CalendarEvent>(
             predicate: #Predicate { $0.id == eventId }
@@ -145,6 +158,28 @@ struct EventDetailView: View {
                 Label("Outdoor", systemImage: "leaf")
                     .font(.subheadline)
                     .foregroundColor(.green)
+            }
+
+            if event.notificationEnabled {
+                HStack(spacing: 4) {
+                    Image(systemName: "bell.fill")
+                        .foregroundColor(.orange)
+                        .font(.caption)
+                    Text("Reminder \(reminderLabel(event.reminderMinutesBefore))")
+                        .font(.subheadline)
+                        .foregroundColor(Color(.systemGray))
+                }
+            }
+
+            if let notes = event.notes, !notes.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Notes")
+                        .font(.caption)
+                        .foregroundColor(Color(.systemGray))
+                    Text(notes)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
             }
 
             remindersSection

@@ -1,20 +1,19 @@
 import SwiftUI
 import SwiftData
-import MapKit
+import CoreLocation
 
 struct PlacesView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = PlacesViewModel()
     @State private var selectedPlace: PlaceCandidate?
     @State private var showDetail: Bool = false
-    @State private var cameraPosition: MapCameraPosition = .userLocation(fallback: .automatic)
 
     var body: some View {
         VStack(spacing: 0) {
             searchAndFilterBar
 
             if viewModel.isMapView {
-                mapContentStyled
+                mapContent
             } else {
                 if viewModel.locationAuthorizationStatus == .denied || viewModel.locationAuthorizationStatus == .restricted {
                     locationDeniedView
@@ -126,81 +125,17 @@ struct PlacesView: View {
         .padding(.top, 4)
     }
 
-    private func panToCurrentLocation() {
-        if let coord = viewModel.currentCoordinate {
-            cameraPosition = .region(MKCoordinateRegion(
-                center: coord,
-                latitudinalMeters: 2000,
-                longitudinalMeters: 2000
-            ))
-        }
-    }
-
-    @ViewBuilder
-    private var mapContentStyled: some View {
-        switch viewModel.selectedMapStyle {
-        case .standard:
-            mapContentBase
-                .mapStyle(.standard)
-        case .satellite:
-            mapContentBase
-                .mapStyle(.imagery)
-        case .hybrid:
-            mapContentBase
-                .mapStyle(.hybrid)
-        }
-    }
-
-    private var mapContentBase: some View {
+    private var mapContent: some View {
         ZStack(alignment: .topTrailing) {
-            Map(position: $cameraPosition) {
-                ForEach(viewModel.placeResults) { place in
-                    Annotation(place.name, coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)) {
-                        VStack(spacing: 0) {
-                            ZStack {
-                                Circle()
-                                    .fill(.orange)
-                                    .frame(width: 32, height: 32)
-                                Image(systemName: viewModel.categoryIcon(for: place.category))
-                                    .font(.caption)
-                                    .foregroundColor(.white)
-                            }
-
-                            Image(systemName: "arrowtriangle.down.fill")
-                                .font(.caption2)
-                                .foregroundColor(.orange)
-                                .offset(y: -3)
-                        }
-                        .onTapGesture {
-                            selectedPlace = place
-                            showDetail = true
-                        }
-                    }
+            GoogleMapView(
+                places: $viewModel.placeResults,
+                currentCoordinate: viewModel.currentCoordinate,
+                selectedMapStyle: viewModel.selectedMapStyle,
+                onPlaceTapped: { place in
+                    selectedPlace = place
+                    showDetail = true
                 }
-                if let coord = viewModel.currentCoordinate {
-                    Annotation("You", coordinate: coord) {
-                        ZStack {
-                            Circle()
-                                .fill(.blue)
-                                .frame(width: 28, height: 28)
-                            Image(systemName: "person.circle.fill")
-                                .font(.caption)
-                                .foregroundColor(.white)
-                        }
-                    }
-                }
-            }
-            .mapControls {
-                MapUserLocationButton()
-                MapCompass()
-                MapScaleView()
-            }
-            .onChange(of: viewModel.currentCoordinate?.latitude) { _, _ in
-                panToCurrentLocation()
-            }
-            .onChange(of: viewModel.currentCoordinate?.longitude) { _, _ in
-                panToCurrentLocation()
-            }
+            )
 
             VStack(spacing: 4) {
                 Menu {
@@ -414,9 +349,12 @@ struct PlacesView: View {
 
                 Section {
                     Button {
-                        let urlString = "https://maps.apple.com/?daddr=\(place.latitude),\(place.longitude)&dirflg=w"
-                        if let url = URL(string: urlString) {
-                            UIApplication.shared.open(url)
+                        let urlString = "comgooglemaps://?daddr=\(place.latitude),\(place.longitude)&directionsmode=walking"
+                        if let googleURL = URL(string: urlString), UIApplication.shared.canOpenURL(googleURL) {
+                            UIApplication.shared.open(googleURL)
+                        } else {
+                            let appleURL = URL(string: "https://maps.apple.com/?daddr=\(place.latitude),\(place.longitude)&dirflg=w")!
+                            UIApplication.shared.open(appleURL)
                         }
                     } label: {
                         Label("Navigate There", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
@@ -439,10 +377,13 @@ struct PlacesView: View {
     }
 
     private func openInMaps(_ place: PlaceCandidate) {
-        let coordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
-        let mapItem = MKMapItem(placemark: MKPlacemark(coordinate: coordinate))
-        mapItem.name = place.name
-        mapItem.openInMaps()
+        let urlString = "comgooglemaps://?q=\(place.latitude),\(place.longitude)&zoom=14"
+        if let googleURL = URL(string: urlString), UIApplication.shared.canOpenURL(googleURL) {
+            UIApplication.shared.open(googleURL)
+        } else {
+            let appleURL = URL(string: "https://maps.apple.com/?q=\(place.latitude),\(place.longitude)")!
+            UIApplication.shared.open(appleURL)
+        }
     }
 }
 

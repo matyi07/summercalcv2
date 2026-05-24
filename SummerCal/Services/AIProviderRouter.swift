@@ -39,8 +39,20 @@ enum AIProviderKind: String, Codable, CaseIterable {
         switch self {
         case .openAI: "gpt-4o"
         case .claude: "claude-3-5-sonnet-latest"
-        case .deepSeek: "deepseek-chat"
+        case .deepSeek: "deepseek-v4-pro"
         case .openAICompatible: "gpt-4o"
+        }
+    }
+
+    /// Maps AISettingsView provider string to AIProviderKind.
+    /// Settings uses: openAI, anthropic, google, mistral, deepSeek, custom
+    static func fromSettings(_ rawValue: String) -> AIProviderKind? {
+        switch rawValue {
+        case "openAI": return .openAI
+        case "deepSeek": return .deepSeek
+        case "anthropic": return .claude
+        case "custom", "google", "mistral": return .openAICompatible
+        default: return AIProviderKind(rawValue: rawValue)
         }
     }
 }
@@ -212,20 +224,34 @@ final class AIProviderRouter {
 
     init(keychain: KeychainStore = .shared) { self.keychain = keychain }
 
-    func client(for provider: AIProviderKind, settings: UserSettings) throws -> AIProviderClient {
-        let apiKey = try keychain.readAPIKey(provider: provider.rawValue)
+    func client(for settingsProvider: String, settings: UserSettings) throws -> AIProviderClient {
+        guard let provider = AIProviderKind.fromSettings(settingsProvider) else {
+            throw NSError(domain: "AI", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unknown AI provider: \(settingsProvider)"])
+        }
+        let apiKey = try keychain.readAPIKey(provider: settingsProvider)
         switch provider {
         case .openAI: return OpenAIClient(apiKey: apiKey)
         case .claude: return ClaudeClient(apiKey: apiKey)
         case .deepSeek: return DeepSeekClient(apiKey: apiKey)
         case .openAICompatible:
+            let baseURL = resolveBaseURL(for: settingsProvider, settings: settings)
+            let model = settings.aiModelName.isEmpty ? AIProviderKind.openAICompatible.defaultModel : settings.aiModelName
             let config = AIRequestConfig(
-                model: settings.aiModelName,
-                maxTokens: 1024,
+                model: model,
+                maxTokens: settings.aiMaxTokens,
                 temperature: 0.7,
-                baseURL: settings.aiBaseURL
+                baseURL: baseURL
             )
             return OpenAICompatibleClient(apiKey: apiKey, config: config)
+        }
+    }
+
+    private func resolveBaseURL(for settingsProvider: String, settings: UserSettings) -> String {
+        switch settingsProvider {
+        case "google": return "https://generativelanguage.googleapis.com/v1beta/openai"
+        case "mistral": return "https://api.mistral.ai"
+        case "custom": return settings.aiBaseURL ?? "https://api.openai.com"
+        default: return settings.aiBaseURL ?? "https://api.openai.com"
         }
     }
 }

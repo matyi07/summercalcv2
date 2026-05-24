@@ -19,6 +19,8 @@ struct CalendarView: View {
 
             weekdayHeadersRow
 
+            colorLegend
+
             monthGrid
 
             Divider()
@@ -49,6 +51,12 @@ struct CalendarView: View {
         }
         .onChange(of: workSessions) { _, newSessions in
             viewModel.refreshWorkSessions(with: newSessions)
+        }
+        .onChange(of: appRouter.selectedTab) { _, tab in
+            if tab == .calendar {
+                viewModel.refreshEvents(with: events)
+                viewModel.refreshWorkSessions(with: workSessions)
+            }
         }
     }
 
@@ -97,6 +105,25 @@ struct CalendarView: View {
         .padding(.bottom, 4)
     }
 
+    private var colorLegend: some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 4) {
+                Circle().fill(.green).frame(width: 8, height: 8)
+                Text("Free").font(.caption2).foregroundStyle(Color(.systemGray))
+            }
+            HStack(spacing: 4) {
+                Circle().fill(.yellow).frame(width: 8, height: 8)
+                Text("Partial").font(.caption2).foregroundStyle(Color(.systemGray))
+            }
+            HStack(spacing: 4) {
+                Circle().fill(.red).frame(width: 8, height: 8)
+                Text("Busy").font(.caption2).foregroundStyle(Color(.systemGray))
+            }
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+    }
+
     private var monthGrid: some View {
         LazyVGrid(columns: columns, spacing: 8) {
             ForEach(viewModel.daysInMonth, id: \.self) { date in
@@ -132,7 +159,7 @@ struct CalendarView: View {
 
                 Circle()
                     .fill(viewModel.dayIndicatorColor(date))
-                    .frame(width: 5, height: 5)
+                    .frame(width: 8, height: 8)
             }
         }
         .buttonStyle(.plain)
@@ -198,6 +225,7 @@ struct CalendarView: View {
     private func deleteEvents(at offsets: IndexSet) {
         for index in offsets {
             let event = viewModel.eventsOnSelectedDay[index]
+            Task { await NotificationService.shared.cancelAll(forEventId: event.id) }
             modelContext.delete(event)
         }
         try? modelContext.save()

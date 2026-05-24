@@ -11,12 +11,47 @@ final class TodayViewModel {
     var freeWindows: [DateInterval] = []
     var suggestions: [ActivitySuggestion] = []
     var weather: WeatherSnapshot?
+    var hourlyForecast: [WeatherSnapshot] = []
     var monthlyEarnings: Double = 0
     var monthlyGoal: Double?
     var isLoading: Bool = false
     var errorMessage: String?
     var currencyCode: String = "USD"
     var isLoadingSuggestions: Bool = false
+    var suggestionError: String?
+
+    var freeDaySummary: String {
+        let totalFreeHours = freeWindows.reduce(0.0) { $0 + $1.duration } / 3600.0
+        let eventCount = todaysEvents.count
+
+        if eventCount == 0 {
+            return "Your day is completely free."
+        }
+
+        let morningWindow = freeWindows.filter { w in
+            let hour = Calendar.current.component(.hour, from: w.start)
+            return hour >= 6 && hour < 12
+        }.reduce(0.0) { $0 + $1.duration } / 3600.0
+
+        let afternoonWindow = freeWindows.filter { w in
+            let hour = Calendar.current.component(.hour, from: w.start)
+            return hour >= 12 && hour < 18
+        }.reduce(0.0) { $0 + $1.duration } / 3600.0
+
+        let totalBusyHours = (todaysEvents.reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }) / 3600.0
+
+        if totalFreeHours >= 6 {
+            if morningWindow >= 2 { return "Free morning — \(Int(morningWindow))h available before your first event." }
+            if afternoonWindow >= 2 { return "Open afternoon — \(Int(afternoonWindow))h after your events." }
+            return "You have \(Int(totalFreeHours))h of free time today."
+        } else if totalFreeHours >= 2 {
+            return "Partially busy — \(Int(totalFreeHours))h free between \(eventCount) events."
+        } else if eventCount >= 2 && totalFreeHours < 1 {
+            return "Busy day — \(eventCount) events, barely any free time."
+        } else {
+            return "\(eventCount) event\(eventCount > 1 ? "s" : "") today, \(Int(totalBusyHours))h total."
+        }
+    }
 
     func loadDay(modelContext: ModelContext) async {
         isLoading = true
@@ -58,6 +93,16 @@ final class TodayViewModel {
         }
         weather = fetchedWeather.first
 
+        let hourlyDescriptor = FetchDescriptor<WeatherSnapshot>(
+            sortBy: [SortDescriptor(\.forecastDate)]
+        )
+        let allSnapshots = (try? modelContext.fetch(hourlyDescriptor)) ?? []
+        let todayEnd = endOfDay.addingTimeInterval(3600)
+        hourlyForecast = allSnapshots.filter { snap in
+            snap.forecastDate >= Date() && snap.forecastDate < todayEnd
+                && !calendar.isDate(snap.forecastDate, inSameDayAs: calendar.date(byAdding: .day, value: 1, to: Date())!)
+        }
+
         let incomeDescriptor = FetchDescriptor<IncomeEntry>(
             sortBy: [SortDescriptor(\.date)]
         )
@@ -79,22 +124,36 @@ final class TodayViewModel {
     }
 
     func refreshSuggestions(modelContext: ModelContext, weather: WeatherSnapshot?, location: Coordinate?, settings: UserSettings) async {
-        isLoadingSuggestions = true
-        errorMessage = nil
-
-        let weatherSummary: String
-        if let w = weather {
-            weatherSummary = "\(Int(w.temperatureCelsius))°C, \(w.condition), \(Int(w.precipitationChance * 100))% rain chance — \(w.summary)"
-        } else {
-            weatherSummary = "Unknown"
+        guard let _ = location else {
+            await MainActor.run {
+                suggestionError = "Suggestions need location access. Enable location in Settings."
+                isLoadingSuggestions = false
+            }
+            return
         }
+
+        guard weather != nil else {
+            await MainActor.run {
+                suggestionError = "Suggestions need weather data. Pull to refresh to fetch weather."
+                isLoadingSuggestions = false
+            }
+            return
+        }
+
+        isLoadingSuggestions = true
+        suggestionError = nil
+
+        guard let weather = weather, let location = location else {
+            await MainActor.run { isLoadingSuggestions = false }
+            return
+        }
+
+        let weatherSummary = buildStructuredWeatherSummary(from: weather)
 
         var nearbyPlaces: [PlaceCandidate] = []
-        if let location = location {
-            let placesService = PlacesService(googleApiKey: settings.googlePlacesAPIKey)
-            await placesService.searchNearby(query: "point of interest", coordinate: location, radiusMeters: 3000)
-            nearbyPlaces = placesService.results
-        }
+        let placesService = PlacesService(googleApiKey: settings.googlePlacesAPIKey)
+        await placesService.searchNearby(query: "point of interest", coordinate: location, radiusMeters: 3000)
+        nearbyPlaces = placesService.results
 
         let dateStr = DateUtils.formattedDayAndDate(Date())
         let preferences: [String] = []
@@ -109,14 +168,11 @@ final class TodayViewModel {
 
         do {
             let keychain = KeychainStore.shared
-            let providerKindRaw = settings.aiProviderKind
-            guard let providerKind = AIProviderKind(rawValue: providerKindRaw) else {
-                throw NSError(domain: "AI", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unknown AI provider"])
-            }
-            _ = try keychain.readAPIKey(provider: providerKindRaw)
+            let providerStr = settings.aiProviderKind
+            _ = try keychain.readAPIKey(provider: providerStr)
 
             let router = AIProviderRouter(keychain: keychain)
-            let client = try router.client(for: providerKind, settings: settings)
+            let client = try router.client(for: providerStr, settings: settings)
             let config = AIRequestConfig(
                 model: settings.aiModelName,
                 maxTokens: settings.aiMaxTokens,
@@ -141,21 +197,34 @@ final class TodayViewModel {
             try? modelContext.save()
             suggestions = parsed
         } catch {
-            let fallback = ActivitySuggestionService().generateQuickIdeas(weather: weather, preferences: [])
-
-            for old in suggestions {
-                modelContext.delete(old)
+            await MainActor.run {
+                suggestionError = "Could not generate suggestions: \(error.localizedDescription)"
             }
-            try? modelContext.save()
-
-            for suggestion in fallback {
-                modelContext.insert(suggestion)
-            }
-            try? modelContext.save()
-            suggestions = fallback
         }
 
-        isLoadingSuggestions = false
+        await MainActor.run { isLoadingSuggestions = false }
+    }
+
+    private func buildStructuredWeatherSummary(from snapshot: WeatherSnapshot) -> String {
+        var parts: [String] = []
+        parts.append("\(Int(snapshot.temperatureCelsius))°C, \(snapshot.condition)")
+        if let feelsLike = snapshot.feelsLikeCelsius {
+            parts.append("feels like \(Int(feelsLike))°C")
+        }
+        parts.append("\(Int(snapshot.precipitationChance * 100))% rain")
+        if let wind = snapshot.windSpeedKph {
+            parts.append("wind \(Int(wind)) km/h")
+        }
+        if let humidity = snapshot.humidity {
+            parts.append("\(Int(humidity * 100))% humidity")
+        }
+        if let uv = snapshot.uvIndex {
+            parts.append("UV index \(uv)")
+        }
+        if let cloud = snapshot.cloudCover {
+            parts.append("\(Int(cloud))% clouds")
+        }
+        return parts.joined(separator: ", ")
     }
 
     private func parseSuggestionJSON(_ content: String) -> [ActivitySuggestion] {
@@ -203,10 +272,22 @@ final class TodayViewModel {
             gaps.append(DateInterval(start: cursor, end: endOfDay))
         }
 
-        let totalFreeSeconds = gaps.reduce(0.0) { $0 + $1.duration }
-        let thresholdHours = 4.0
-        freeWindows = gaps
-        isFreeDay = totalFreeSeconds >= thresholdHours * 3600
+        let activeStart = calendar.date(bySettingHour: 6, minute: 0, second: 0, of: startOfDay)!
+        let activeEnd = calendar.date(bySettingHour: 22, minute: 0, second: 0, of: startOfDay)!
+
+        let activeGaps = gaps.compactMap { gap -> DateInterval? in
+            let start = max(gap.start, activeStart)
+            let end = min(gap.end, activeEnd)
+            guard end > start else { return nil }
+            return DateInterval(start: start, end: end)
+        }
+
+        let totalFreeSeconds = activeGaps.reduce(0.0) { $0 + $1.duration }
+        let totalActiveSeconds = activeEnd.timeIntervalSince(activeStart)
+        let freeRatio = totalActiveSeconds / totalActiveSeconds
+
+        freeWindows = activeGaps
+        isFreeDay = freeRatio >= 0.5
     }
 
     private func findCurrentEvent() {

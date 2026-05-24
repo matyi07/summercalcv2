@@ -106,12 +106,42 @@ final class CalendarViewModel {
     }
 
     func dayIndicatorColor(_ date: Date) -> Color {
-        let events = hasEvents(date)
-        let work = hasWorkSession(date)
-        if events && work { return .orange }
-        if events { return .blue }
-        if work { return .green }
-        return .clear
+        let day = calendar.startOfDay(for: date)
+        let activeStart = calendar.date(bySettingHour: 6, minute: 0, second: 0, of: day)!
+        let activeEnd = calendar.date(bySettingHour: 22, minute: 0, second: 0, of: day)!
+
+        let dayEvents = allEvents.filter { calendar.isDate($0.startDate, inSameDayAs: day) }
+
+        if dayEvents.isEmpty {
+            return .green
+        }
+
+        var gaps: [DateInterval] = []
+        var cursor = activeStart
+        let sorted = dayEvents.sorted(by: { $0.startDate < $1.startDate })
+        for event in sorted {
+            let evStart = max(event.startDate, activeStart)
+            let evEnd = min(event.endDate, activeEnd)
+            if evStart > cursor {
+                gaps.append(DateInterval(start: cursor, end: evStart))
+            }
+            if evEnd > cursor {
+                cursor = evEnd
+            }
+        }
+        if cursor < activeEnd {
+            gaps.append(DateInterval(start: cursor, end: activeEnd))
+        }
+
+        let totalFree = gaps.reduce(0.0) { $0 + $1.duration } / 3600.0
+        let totalActive = activeEnd.timeIntervalSince(activeStart) / 3600.0
+
+        if totalActive <= 0 || dayEvents.isEmpty { return .green }
+        let freeRatio = totalFree / totalActive
+
+        if freeRatio >= 0.6 { return .green }
+        if freeRatio >= 0.3 { return .yellow }
+        return .red
     }
 
     func updateEventsForSelectedDay() {

@@ -65,11 +65,48 @@ final class KeychainStore {
     }
 
     func readAPIKey(provider: String) throws -> String {
-        try read(key: "ai_key_\(provider)")
+        do {
+            return try read(key: "ai_key_\(provider)")
+        } catch {
+            // Migration: try old keychain service used by SettingsViewModel before the fix
+            if let legacy = try? readLegacy(provider: provider) {
+                try save(key: "ai_key_\(provider)", value: legacy)
+                return legacy
+            }
+            throw error
+        }
     }
 
     func deleteAPIKey(provider: String) throws {
         try delete(key: "ai_key_\(provider)")
+        try? deleteLegacy(provider: provider)
+    }
+
+    // MARK: - Legacy migration (previously SettingsViewModel used separate service)
+
+    private func readLegacy(provider: String) throws -> String {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: "com.summercal.apikey",
+            kSecAttrAccount: provider,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let data = result as? Data, let value = String(data: data, encoding: .utf8) else {
+            throw KeychainError.readError(status: status)
+        }
+        return value
+    }
+
+    private func deleteLegacy(provider: String) throws {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: "com.summercal.apikey",
+            kSecAttrAccount: provider
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }
 

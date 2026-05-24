@@ -26,6 +26,8 @@
 	<string>SummerCal uses your location to show local weather and nearby places. You can disable this anytime.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>SummerCal uses your location for weather alerts and place suggestions.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>SummerCal uses the camera to capture receipt photos for expense tracking.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>SummerCal can show your existing calendar events alongside your plans.</string>
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
@@ -45,5 +47,9 @@
 	</array>
 	<key>UIUserInterfaceStyle</key>
 	<string>Light</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>comgooglemaps</string>
+	</array>
 </dict>
 </plist>
