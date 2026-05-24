@@ -4,6 +4,15 @@ import PhotosUI
 import UIKit
 import AVFoundation
 
+private struct ReceiptExpenseDraft {
+    let date: Date
+    let amount: Double
+    let category: ExpenseCategory
+    let paymentMethod: String
+    let note: String
+    let receiptImageData: Data
+}
+
 struct AddExpenseView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -199,7 +208,7 @@ struct AddExpenseView: View {
                 }
                 .buttonStyle(.plain)
 
-                PhotosPicker(selection: $selectedPhotos, maxSelectionCount: 5, matching: .images) {
+                PhotosPicker(selection: $selectedPhotos, maxSelectionCount: isEditing ? 1 : 5, matching: .images) {
                     VStack(spacing: 6) {
                         Image(systemName: "photo.on.rectangle").font(.title2)
                         Text("Choose Photo\(receiptImages.isEmpty ? "" : "s")").font(.caption)
@@ -215,7 +224,7 @@ struct AddExpenseView: View {
                 Button {
                     Task { await scanAllReceipts() }
                 } label: {
-                    Label("Scan \(receiptImages.count) Receipt\(receiptImages.count > 1 ? "s" : "") with AI", systemImage: "text.viewfinder")
+                    Label(scanButtonTitle, systemImage: "text.viewfinder")
                 }
             }
 
@@ -251,6 +260,13 @@ struct AddExpenseView: View {
         } header: {
             Text("Receipt")
         }
+    }
+
+    private var scanButtonTitle: String {
+        if !isEditing && receiptImages.count > 1 {
+            return "Scan & Add \(receiptImages.count) Expenses"
+        }
+        return "Scan \(receiptImages.count) Receipt\(receiptImages.count > 1 ? "s" : "") with AI"
     }
 
     @MainActor
@@ -400,24 +416,25 @@ struct AddExpenseView: View {
         }()
 
         let scanner = ReceiptScannerService()
-        var merged: [String: Any?] = [:]
+        let converter = CurrencyConversionService()
+        let targetCurrency = settings.currencyCode
 
+        var drafts: [ReceiptExpenseDraft] = []
         for (idx, imageData) in receiptImages.enumerated() {
             do {
                 let result = try await scanner.scanReceipt(
                     imageData: imageData, provider: provider, apiKey: apiKey,
                     model: model, baseURL: baseURL
                 )
-                if let t = result.total, t > 0 {
-                    let prev = (merged["total"] as? Double) ?? 0
-                    let cnt = (merged["count"] as? Int) ?? 0
-                    merged["total"] = prev + t
-                    merged["count"] = cnt + 1
-                }
-                if merged["merchantName"] == nil { merged["merchantName"] = result.merchantName }
-                if merged["date"] == nil { merged["date"] = result.date }
-                if merged["category"] == nil { merged["category"] = result.category }
-                if merged["currency"] == nil { merged["currency"] = result.currency }
+
+                let draft = try await expenseDraft(
+                    from: result,
+                    imageData: imageData,
+                    targetCurrency: targetCurrency,
+                    converter: converter,
+                    existingNote: note
+                )
+                drafts.append(draft)
                 scannedCount = idx + 1
             } catch {
                 isScanning = false
@@ -427,31 +444,189 @@ struct AddExpenseView: View {
             }
         }
 
-        let mergedTotal: Double? = {
-            guard let sum = merged["total"] as? Double, sum > 0 else { return nil }
-            return sum
-        }()
-
         await MainActor.run {
-            if let total = mergedTotal, total > 0 {
-                amountText = String(format: "%.2f", total).replacingOccurrences(of: ".", with: decimalSeparator())
+            if !isEditing && drafts.count > 1 {
+                for draft in drafts {
+                    let entry = ExpenseEntry(
+                        date: draft.date,
+                        amount: draft.amount,
+                        category: draft.category,
+                        paymentMethod: draft.paymentMethod,
+                        note: draft.note,
+                        receiptImageData: draft.receiptImageData
+                    )
+                    modelContext.insert(entry)
+                }
+                try? modelContext.save()
+                isScanning = false
+                scanError = nil
+                onSave?()
+                dismiss()
+                return
             }
-            if let dateStr = merged["date"] as? String {
-                let formatter = DateFormatter()
-                formatter.dateFormat = "yyyy-MM-dd"
-                if let parsedDate = formatter.date(from: dateStr) { date = parsedDate }
+
+            guard let draft = drafts.first else {
+                isScanning = false
+                scanError = "No receipt data was found."
+                return
             }
-            if let merchant = merged["merchantName"] as? String, !merchant.isEmpty {
-                note = merchant + (note.isEmpty ? "" : "\n\(note)")
-            }
-            if let cat = merged["category"] as? String {
-                category = ExpenseCategory.allCases.first { $0.label.lowercased() == cat.lowercased() } ?? .other
-            }
-            if let cur = merged["currency"] as? String {
-                note = note.isEmpty ? "Currency: \(cur)" : "\(note)\nCurrency: \(cur)"
-            }
+
+            amountText = String(format: "%.2f", draft.amount).replacingOccurrences(of: ".", with: decimalSeparator())
+            date = draft.date
+            category = draft.category
+            paymentMethod = draft.paymentMethod
+            note = draft.note
             isScanning = false
             scanError = nil
         }
+    }
+
+    private func expenseDraft(
+        from extraction: ReceiptExtraction,
+        imageData: Data,
+        targetCurrency: String,
+        converter: CurrencyConversionService,
+        existingNote: String
+    ) async throws -> ReceiptExpenseDraft {
+        guard let total = extraction.total, total > 0 else {
+            throw NSError(
+                domain: "ReceiptScanner",
+                code: 422,
+                userInfo: [NSLocalizedDescriptionKey: "No total amount found on this receipt."]
+            )
+        }
+
+        let conversion = try await converter.convert(
+            amount: total,
+            from: extraction.currency,
+            to: targetCurrency
+        )
+
+        return ReceiptExpenseDraft(
+            date: receiptDate(from: extraction.date),
+            amount: conversion.convertedAmount,
+            category: normalizedExpenseCategory(extraction.category ?? ""),
+            paymentMethod: normalizedPaymentMethod(extraction.paymentMethod),
+            note: receiptNote(existingNote: existingNote, extraction: extraction, conversion: conversion),
+            receiptImageData: imageData
+        )
+    }
+
+    private func receiptDate(from dateString: String?) -> Date {
+        guard let dateString else { return Date() }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: dateString) ?? Date()
+    }
+
+    private func normalizedExpenseCategory(_ value: String) -> ExpenseCategory {
+        let normalized = value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+        if let category = ExpenseCategory.allCases.first(where: {
+            $0.rawValue.lowercased() == normalized || $0.label.lowercased() == normalized
+        }) {
+            return category
+        }
+
+        switch normalized {
+        case let value where ["restaurant", "dining", "grocery", "groceries", "cafe", "coffee", "food", "elelmiszer"].contains(where: { value.contains($0) }):
+            return .food
+        case let value where ["fuel", "gas station", "parking", "taxi", "transport", "bus", "train", "benzinkut"].contains(where: { value.contains($0) }):
+            return .transport
+        case let value where ["pharmacy", "medical", "clinic", "health", "patika", "gyogyszertar"].contains(where: { value.contains($0) }):
+            return .health
+        case let value where ["movie", "cinema", "ticket", "concert", "entertainment"].contains(where: { value.contains($0) }):
+            return .entertainment
+        case let value where ["subscription", "netflix", "spotify", "elofizetes"].contains(where: { value.contains($0) }):
+            return .subscription
+        case let value where ["hotel", "flight", "airline", "travel"].contains(where: { value.contains($0) }):
+            return .travel
+        case let value where ["book", "school", "education", "konyv", "iskola"].contains(where: { value.contains($0) }):
+            return .education
+        case let value where ["utility", "bill", "water", "electric", "gas bill", "kozmu"].contains(where: { value.contains($0) }):
+            return .utilities
+        case let value where ["store", "shop", "retail", "clothing", "bolt", "aruhaz"].contains(where: { value.contains($0) }):
+            return .shopping
+        default:
+            return .other
+        }
+    }
+
+    private func normalizedPaymentMethod(_ value: String?) -> String {
+        guard let value else { return paymentMethod }
+        let normalized = value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+        if paymentMethods.contains(normalized) { return normalized }
+        if ["keszpenz", "cash", "kp"].contains(where: { normalized.contains($0) }) {
+            return "cash"
+        }
+        if ["bankkartya", "bank card", "card", "kartya", "visa", "mastercard", "maestro", "pos"].contains(where: { normalized.contains($0) }) {
+            return "card"
+        }
+        if ["atutalas", "transfer", "bank transfer"].contains(where: { normalized.contains($0) }) {
+            return "transfer"
+        }
+        if ["direct debit", "csoportos beszedes"].contains(where: { normalized.contains($0) }) {
+            return "direct debit"
+        }
+        return paymentMethod
+    }
+
+    private func receiptNote(
+        existingNote: String,
+        extraction: ReceiptExtraction,
+        conversion: CurrencyConversionResult
+    ) -> String {
+        var lines: [String] = []
+
+        if let merchant = extraction.merchantName, !merchant.isEmpty {
+            lines.append("Store: \(merchant)")
+        }
+        if let method = extraction.paymentMethod, !method.isEmpty {
+            lines.append("Payment: \(method.capitalized)")
+        }
+        if let currency = conversion.originalCurrency {
+            lines.append("Currency: \(currency)")
+        } else if let currency = extraction.currency, !currency.isEmpty {
+            lines.append("Currency: \(currency)")
+        }
+        if conversion.converted, let originalCurrency = conversion.originalCurrency {
+            lines.append("Original: \(formattedAmount(conversion.originalAmount, currency: originalCurrency))")
+            lines.append("Converted: \(formattedAmount(conversion.convertedAmount, currency: conversion.targetCurrency))")
+            if let rate = conversion.exchangeRate {
+                var rateLine = "Rate: 1 \(originalCurrency) = \(String(format: "%.6f", rate)) \(conversion.targetCurrency)"
+                if let rateDate = conversion.rateDate {
+                    rateLine += " (\(rateDate))"
+                }
+                lines.append(rateLine)
+            }
+        }
+        if let tax = extraction.tax, tax > 0 {
+            let taxCurrency = conversion.originalCurrency ?? extraction.currency ?? conversion.targetCurrency
+            lines.append("Tax: \(formattedAmount(tax, currency: taxCurrency))")
+        }
+        if let items = extraction.lineItems, !items.isEmpty {
+            lines.append("Items: \(items.prefix(8).joined(separator: ", "))")
+        }
+        let autoPrefixes = ["Store:", "Payment:", "Currency:", "Original:", "Converted:", "Rate:", "Tax:", "Items:"]
+        let customLines = existingNote
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { line in
+                !line.isEmpty && !autoPrefixes.contains { line.hasPrefix($0) }
+            }
+        lines.append(contentsOf: customLines)
+
+        return lines.joined(separator: "\n")
+    }
+
+    private func formattedAmount(_ amount: Double, currency: String) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currency
+        return formatter.string(from: NSNumber(value: amount)) ?? "\(String(format: "%.2f", amount)) \(currency)"
     }
 }

@@ -37,7 +37,9 @@ struct SummerCalApp: App {
         }
     }()
 
-    init() {}
+    init() {
+        _ = NotificationService.shared
+    }
 
     var body: some Scene {
         WindowGroup {

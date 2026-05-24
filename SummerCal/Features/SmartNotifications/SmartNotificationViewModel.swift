@@ -175,7 +175,13 @@ final class SmartNotificationViewModel {
 
         do {
             try await Task.sleep(nanoseconds: 1_000_000_000)
-            _ = await NotificationService.shared.requestPermission()
+            let permitted = await NotificationService.shared.requestPermission()
+            guard permitted else {
+                scheduleError = "Notifications are disabled. Enable them in iOS Settings to receive reminders."
+                isScheduling = false
+                loadAll(modelContext: modelContext)
+                return
+            }
             let service = SmartNotificationService()
             await service.runDailyPipeline(for: Date(), modelContext: modelContext)
         } catch {

@@ -1,10 +1,24 @@
 import UserNotifications
 import Foundation
 
+private final class SummerCalNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = SummerCalNotificationDelegate()
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound, .badge]
+    }
+}
+
 final class NotificationService {
     static let shared = NotificationService()
 
-    private init() { registerCategories() }
+    private init() {
+        UNUserNotificationCenter.current().delegate = SummerCalNotificationDelegate.shared
+        registerCategories()
+    }
 
     func requestPermission() async -> Bool {
         do {
@@ -12,13 +26,29 @@ final class NotificationService {
         } catch { return false }
     }
 
-    func scheduleEventReminder(event: CalendarEvent, minutesBefore: Int, notes: [EventNote]?) async -> String {
+    @discardableResult
+    func scheduleEventReminder(event: CalendarEvent, minutesBefore: Int, notes: [EventNote]?) async -> String? {
+        guard await ensureAuthorized() else { return nil }
+
         let notificationId = "event_reminder_\(event.id.uuidString)_\(minutesBefore)"
         let content = UNMutableNotificationContent()
         content.title = event.title
         content.sound = .default
 
-        var body = "Starts in \(minutesBefore) minutes"
+        let requestedTriggerDate = event.startDate.addingTimeInterval(-Double(minutesBefore * 60))
+        let minimumFutureDate = Date().addingTimeInterval(5)
+        let triggerDate: Date
+        if requestedTriggerDate > minimumFutureDate {
+            triggerDate = requestedTriggerDate
+        } else if event.startDate > minimumFutureDate {
+            triggerDate = minimumFutureDate
+        } else {
+            cancelNotification(id: notificationId)
+            return nil
+        }
+
+        let effectiveMinutes = max(0, Int(event.startDate.timeIntervalSince(triggerDate) / 60))
+        var body = effectiveMinutes == 0 ? "Starts now" : "Starts in \(effectiveMinutes) minutes"
         if let notes = notes, !notes.isEmpty {
             body += ". Notes: " + notes.prefix(2).map { $0.body }.joined(separator: ". ")
         }
@@ -26,28 +56,45 @@ final class NotificationService {
         content.userInfo = ["eventId": event.id.uuidString, "notificationType": "event_reminder"]
         content.categoryIdentifier = "EVENT_REMINDER"
 
-        let triggerDate = event.startDate.addingTimeInterval(-Double(minutesBefore * 60))
-        let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: triggerDate)
+        let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: triggerDate)
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
 
         let request = UNNotificationRequest(identifier: notificationId, content: content, trigger: trigger)
-        try? await UNUserNotificationCenter.current().add(request)
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+        } catch {
+            print("Failed to schedule event notification \(notificationId): \(error.localizedDescription)")
+            return nil
+        }
 
         return notificationId
     }
 
-    func scheduleSmartNotification(id: String, title: String, body: String, date: Date, categoryIdentifier: String? = nil) async {
+    @discardableResult
+    func scheduleSmartNotification(id: String, title: String, body: String, date: Date, categoryIdentifier: String? = nil) async -> Bool {
+        guard await ensureAuthorized() else { return false }
+        guard date > Date().addingTimeInterval(5) else {
+            cancelNotification(id: id)
+            return false
+        }
+
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
         content.categoryIdentifier = categoryIdentifier ?? ""
 
-        let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
 
         let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
-        try? await UNUserNotificationCenter.current().add(request)
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            return true
+        } catch {
+            print("Failed to schedule smart notification \(id): \(error.localizedDescription)")
+            return false
+        }
     }
 
     func cancelNotification(id: String) {
@@ -96,5 +143,21 @@ final class NotificationService {
         )
 
         UNUserNotificationCenter.current().setNotificationCategories([eventCategory, freeDayCategory])
+    }
+
+    private func ensureAuthorized() async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        case .notDetermined:
+            return await requestPermission()
+        case .denied:
+            return false
+        @unknown default:
+            return false
+        }
     }
 }

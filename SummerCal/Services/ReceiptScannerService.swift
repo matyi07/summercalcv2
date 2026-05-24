@@ -10,6 +10,7 @@ struct ReceiptExtraction: Codable {
     var currency: String?
     var lineItems: [String]?
     var category: String?
+    var paymentMethod: String?
 }
 
 private struct ReceiptScanRequestPayload {
@@ -124,6 +125,9 @@ final class ReceiptScannerService {
         You are a receipt scanner. Extract the following information from \(inputDescription).
         Respond ONLY with a valid JSON object, no markdown or explanatory text. Use null for missing fields.
         total and tax must be JSON numbers without currency symbols. lineItems must be an array of strings.
+        paymentMethod must be "cash", "card", "transfer", or "direct debit".
+        Hungarian payment labels: KÉSZPÉNZ means cash, BANKKÁRTYA means card.
+        Categorize using: housing, utilities, food, transport, health, entertainment, shopping, subscription, travel, education, other.
 
         {
           "merchantName": "Store name",
@@ -132,7 +136,8 @@ final class ReceiptScannerService {
           "tax": 0.00,
           "currency": "USD",
           "lineItems": ["item1", "item2"],
-          "category": "food|transport|shopping|health|utilities|housing|entertainment|other"
+          "category": "food",
+          "paymentMethod": "card"
         }
         """
     }
@@ -237,12 +242,13 @@ final class ReceiptScannerService {
     private func extraction(from dict: [String: Any]) -> ReceiptExtraction {
         ReceiptExtraction(
             merchantName: optionalString(firstValue(in: dict, keys: ["merchantName", "merchant", "storeName", "vendor", "businessName"])),
-            date: optionalString(firstValue(in: dict, keys: ["date", "receiptDate", "purchaseDate", "transactionDate"])),
+            date: normalizedDate(optionalString(firstValue(in: dict, keys: ["date", "receiptDate", "purchaseDate", "transactionDate"])) ?? ""),
             total: optionalDouble(firstValue(in: dict, keys: ["total", "amount", "grandTotal", "totalAmount", "balanceDue", "paid"])),
             tax: optionalDouble(firstValue(in: dict, keys: ["tax", "salesTax", "vat", "taxAmount"])),
             currency: optionalString(firstValue(in: dict, keys: ["currency", "currencyCode"])),
             lineItems: optionalLineItems(firstValue(in: dict, keys: ["lineItems", "items", "products", "charges"])),
-            category: optionalString(firstValue(in: dict, keys: ["category", "expenseCategory"]))
+            category: normalizedCategory(optionalString(firstValue(in: dict, keys: ["category", "expenseCategory", "purchaseCategory"]))),
+            paymentMethod: normalizedPaymentMethod(optionalString(firstValue(in: dict, keys: ["paymentMethod", "payment", "method", "tender", "paymentType", "fizetesiMod"])))
         )
     }
 
@@ -260,7 +266,9 @@ final class ReceiptScannerService {
             extraction.total != nil ||
             extraction.tax != nil ||
             extraction.currency != nil ||
-            extraction.lineItems?.isEmpty == false
+            extraction.lineItems?.isEmpty == false ||
+            extraction.category != nil ||
+            extraction.paymentMethod != nil
     }
 
     private func heuristicExtraction(from text: String?) -> ReceiptExtraction? {
@@ -278,7 +286,8 @@ final class ReceiptScannerService {
             tax: heuristicTax(from: lines),
             currency: heuristicCurrency(from: text),
             lineItems: heuristicLineItems(from: lines),
-            category: heuristicCategory(from: text)
+            category: heuristicCategory(from: text),
+            paymentMethod: heuristicPaymentMethod(from: text)
         )
 
         return hasUsableData(extraction) ? extraction : nil
@@ -288,11 +297,11 @@ final class ReceiptScannerService {
         let blockedTerms = [
             "receipt", "invoice", "total", "subtotal", "tax", "vat", "date",
             "time", "card", "visa", "mastercard", "cash", "change", "amount",
-            "auth", "terminal", "approved"
+            "auth", "terminal", "approved", "keszpenz", "bankkartya", "kartya"
         ]
 
         return lines.first { line in
-            let lower = line.lowercased()
+            let lower = normalizedSearchText(line)
             let hasLetter = line.rangeOfCharacter(from: .letters) != nil
             let isBlocked = blockedTerms.contains { lower.contains($0) }
             return hasLetter && !isBlocked && moneyValues(in: line).isEmpty && line.count <= 80
@@ -328,7 +337,9 @@ final class ReceiptScannerService {
 
     private func heuristicDate(from text: String) -> String? {
         let patterns = [
+            #"\b\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.?\b"#,
             #"\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b"#,
+            #"\b\d{1,2}\.\s*\d{1,2}\.\s*\d{2,4}\.?\b"#,
             #"\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b"#
         ]
 
@@ -344,6 +355,9 @@ final class ReceiptScannerService {
     }
 
     private func normalizedDate(_ value: String) -> String? {
+        let normalizedValue = value
+            .replacingOccurrences(of: " ", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
         let inputFormats = [
             "yyyy-MM-dd", "yyyy/M/d", "yyyy.M.d",
             "M/d/yyyy", "M-d-yyyy", "M.d.yyyy",
@@ -356,7 +370,7 @@ final class ReceiptScannerService {
             let parser = DateFormatter()
             parser.locale = Locale(identifier: "en_US_POSIX")
             parser.dateFormat = format
-            guard let date = parser.date(from: value) else { continue }
+            guard let date = parser.date(from: normalizedValue) else { continue }
 
             let output = DateFormatter()
             output.locale = Locale(identifier: "en_US_POSIX")
@@ -372,31 +386,99 @@ final class ReceiptScannerService {
         if upper.contains("USD") || text.contains("$") { return "USD" }
         if upper.contains("EUR") || text.contains("€") { return "EUR" }
         if upper.contains("GBP") || text.contains("£") { return "GBP" }
-        if upper.contains("HUF") || upper.contains("FT") { return "HUF" }
+        if upper.range(of: #"\bHUF\b"#, options: .regularExpression) != nil ||
+            upper.range(of: #"(?<![A-Z])FT(?![A-Z])"#, options: .regularExpression) != nil {
+            return "HUF"
+        }
         return nil
     }
 
     private func heuristicCategory(from text: String) -> String? {
-        let lower = text.lowercased()
-        if ["restaurant", "cafe", "coffee", "grocery", "market", "food"].contains(where: { lower.contains($0) }) {
+        let lower = normalizedSearchText(text)
+        if ["restaurant", "etterem", "cafe", "kave", "coffee", "grocery", "groceries", "elelmiszer", "market", "spar", "tesco", "aldi", "lidl", "abc", "pekseg", "bakery", "food", "dining"].contains(where: { lower.contains($0) }) {
             return "food"
         }
-        if ["pharmacy", "drug", "clinic", "medical"].contains(where: { lower.contains($0) }) {
+        if ["pharmacy", "gyogyszertar", "patika", "drug", "clinic", "medical"].contains(where: { lower.contains($0) }) {
             return "health"
         }
-        if ["fuel", "gas", "parking", "uber", "taxi"].contains(where: { lower.contains($0) }) {
+        if ["fuel", "uzemanyag", "benzinkut", "mol", "shell", "omv", "gas", "parking", "parkolas", "uber", "bolt taxi", "taxi", "busz", "vonat", "train"].contains(where: { lower.contains($0) }) {
             return "transport"
         }
-        if ["store", "shop", "retail"].contains(where: { lower.contains($0) }) {
+        if ["mozi", "cinema", "movie", "theatre", "theater", "concert", "ticket"].contains(where: { lower.contains($0) }) {
+            return "entertainment"
+        }
+        if ["netflix", "spotify", "subscription", "elofizetes"].contains(where: { lower.contains($0) }) {
+            return "subscription"
+        }
+        if ["hotel", "airline", "flight", "repulo", "travel", "utazas"].contains(where: { lower.contains($0) }) {
+            return "travel"
+        }
+        if ["book", "konyv", "school", "iskola", "education", "oktatas"].contains(where: { lower.contains($0) }) {
+            return "education"
+        }
+        if ["villany", "aram", "water", "viz", "gas bill", "utility", "kozmu"].contains(where: { lower.contains($0) }) {
+            return "utilities"
+        }
+        if ["store", "shop", "retail", "aruhaz", "bolt", "ruha", "clothing", "dm", "rossmann"].contains(where: { lower.contains($0) }) {
             return "shopping"
         }
         return nil
     }
 
+    private func heuristicPaymentMethod(from text: String) -> String? {
+        let lower = normalizedSearchText(text)
+
+        let lines = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        let cardTerms = ["bankkartya", "bank card", "card", "kartya", "visa", "mastercard", "maestro", "contactless", "erinteses", "pos"]
+        let cashTerms = ["keszpenz", "cash", "kp"]
+        let transferTerms = ["atutalas", "transfer", "bank transfer"]
+        let directDebitTerms = ["direct debit", "csoportos beszedes"]
+
+        if paymentLine(in: lines, containsAny: cardTerms, hasPositiveAmount: true) {
+            return "card"
+        }
+        if paymentLine(in: lines, containsAny: cashTerms, hasPositiveAmount: true) {
+            return "cash"
+        }
+        if paymentLine(in: lines, containsAny: transferTerms, hasPositiveAmount: true) {
+            return "transfer"
+        }
+        if paymentLine(in: lines, containsAny: directDebitTerms, hasPositiveAmount: true) {
+            return "direct debit"
+        }
+
+        if cardTerms.contains(where: { lower.contains($0) }) {
+            return "card"
+        }
+        if cashTerms.contains(where: { lower.contains($0) }) {
+            return "cash"
+        }
+        if transferTerms.contains(where: { lower.contains($0) }) {
+            return "transfer"
+        }
+        if directDebitTerms.contains(where: { lower.contains($0) }) {
+            return "direct debit"
+        }
+        return nil
+    }
+
+    private func paymentLine(in lines: [String], containsAny terms: [String], hasPositiveAmount: Bool) -> Bool {
+        lines.contains { line in
+            let lower = normalizedSearchText(line)
+            guard terms.contains(where: { lower.contains($0) }) else { return false }
+            if !hasPositiveAmount { return true }
+            return moneyValues(in: line).contains { $0 > 0 }
+        }
+    }
+
     private func heuristicLineItems(from lines: [String]) -> [String]? {
-        let blockedTerms = ["total", "subtotal", "tax", "vat", "change", "balance", "paid"]
+        let blockedTerms = ["total", "subtotal", "tax", "vat", "change", "balance", "paid", "cash", "keszpenz", "card", "kartya", "bankkartya", "visa", "mastercard", "maestro"]
         let items = lines.compactMap { line -> String? in
-            let lower = line.lowercased()
+            let lower = normalizedSearchText(line)
             guard line.rangeOfCharacter(from: .letters) != nil,
                   !blockedTerms.contains(where: { lower.contains($0) }),
                   !moneyValues(in: line).isEmpty else {
@@ -429,8 +511,31 @@ final class ReceiptScannerService {
         return String(text[swiftRange])
     }
 
+    private func normalizedSearchText(_ text: String) -> String {
+        text
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "hu_HU"))
+            .lowercased()
+    }
+
+    private func normalizedCategory(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let lower = normalizedSearchText(value)
+        let allowed = ["housing", "utilities", "food", "transport", "health", "entertainment", "shopping", "subscription", "travel", "education", "other"]
+        if allowed.contains(lower) { return lower }
+        return heuristicCategory(from: lower)
+    }
+
+    private func normalizedPaymentMethod(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let lower = normalizedSearchText(value)
+        if ["cash", "card", "transfer", "direct debit"].contains(lower) {
+            return lower
+        }
+        return heuristicPaymentMethod(from: lower)
+    }
+
     private func receiptDictionary(from dict: [String: Any]) -> [String: Any] {
-        let directKeys = ["merchantName", "merchant", "storeName", "total", "amount", "lineItems", "items"]
+        let directKeys = ["merchantName", "merchant", "storeName", "total", "amount", "lineItems", "items", "paymentMethod"]
         if firstValue(in: dict, keys: directKeys) != nil {
             return dict
         }

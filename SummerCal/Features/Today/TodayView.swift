@@ -173,45 +173,93 @@ struct TodayView: View {
                 .font(.headline)
 
             ForEach(viewModel.todaysEvents.sorted(by: { $0.startDate < $1.startDate })) { event in
-                HStack(spacing: 12) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(eventColor(event))
-                        .frame(width: 4, height: 40)
+                Button {
+                    appRouter.navigateToEvent(event.id)
+                } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(eventColor(event))
+                            .frame(width: 4, height: 58)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(event.title)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        HStack(spacing: 8) {
-                            Text(event.startDate, style: .time)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(event.title)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.primary)
+
+                            Text(eventTimeSummary(event))
                                 .font(.caption)
                                 .foregroundStyle(Color(.systemGray))
-                            if let location = event.location, !location.isEmpty {
-                                Label(location, systemImage: "mappin.and.ellipse")
+
+                            if let notes = event.notes, !notes.isEmpty {
+                                Text(notes)
                                     .font(.caption)
                                     .foregroundStyle(Color(.systemGray))
-                                    .lineLimit(1)
+                                    .lineLimit(2)
+                            }
+
+                            HStack(spacing: 8) {
+                                if let category = event.category, !category.isEmpty {
+                                    Label(category.capitalized, systemImage: "tag")
+                                        .font(.caption2)
+                                        .foregroundStyle(Color(.systemGray))
+                                }
+                                if let location = event.location, !location.isEmpty {
+                                    Label(location, systemImage: "mappin.and.ellipse")
+                                        .font(.caption2)
+                                        .foregroundStyle(Color(.systemGray))
+                                        .lineLimit(1)
+                                }
                             }
                         }
-                    }
-                    Spacer()
-                    if event.notificationEnabled {
-                        Image(systemName: "bell.fill")
+                        Spacer()
+                        if event.notificationEnabled {
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Image(systemName: "bell.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                                Text(reminderLabel(event.reminderMinutesBefore))
+                                    .font(.caption2)
+                                    .foregroundStyle(Color(.systemGray))
+                            }
+                        }
+                        Image(systemName: "chevron.right")
                             .font(.caption2)
-                            .foregroundColor(.orange)
+                            .foregroundStyle(Color(.systemGray3))
+                            .padding(.top, 2)
                     }
-                    Image(systemName: "chevron.right")
-                        .font(.caption2)
-                        .foregroundStyle(Color(.systemGray3))
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemBackground)).shadow(color: .black.opacity(0.05), radius: 2))
                 }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemBackground)).shadow(color: .black.opacity(0.05), radius: 2))
-                .onTapGesture {
-                    appRouter.navigateToEvent(event.id)
-                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal)
+    }
+
+    private func eventTimeSummary(_ event: CalendarEvent) -> String {
+        if event.isAllDay {
+            return "All day, \(formattedDate(event.startDate))"
+        }
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .none
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateStyle = .none
+        timeFormatter.timeStyle = .short
+
+        return "\(dateFormatter.string(from: event.startDate)), \(timeFormatter.string(from: event.startDate)) - \(timeFormatter.string(from: event.endDate))"
+    }
+
+    private func reminderLabel(_ minutes: Int) -> String {
+        switch minutes {
+        case 0: return "At start"
+        case 60: return "1 hour"
+        case 1440: return "1 day"
+        default: return "\(minutes) min"
+        }
     }
 
     private func eventColor(_ event: CalendarEvent) -> Color {

@@ -184,20 +184,16 @@ final class SmartNotificationService {
         context: ModelContext
     ) async {
         let notificationId = "smart_\(kind.rawValue)_\(UUID().uuidString)"
-        let scheduleDate = Calendar.current.date(
-            bySettingHour: rule.preferredHour,
-            minute: rule.preferredMinute,
-            second: 0,
-            of: date
-        ) ?? date
+        let scheduleDate = nextScheduledDate(for: rule, on: date)
 
-        await notificationService.scheduleSmartNotification(
+        let scheduled = await notificationService.scheduleSmartNotification(
             id: notificationId,
             title: title,
             body: body,
             date: scheduleDate,
             categoryIdentifier: kind == .freeDay ? "FREE_DAY" : nil
         )
+        guard scheduled else { return }
 
         let log = NotificationLog(
             notificationId: notificationId,
@@ -208,6 +204,27 @@ final class SmartNotificationService {
         )
         context.insert(log)
         try? context.save()
+    }
+
+    private func nextScheduledDate(for rule: SmartNotificationRule, on date: Date) -> Date {
+        let calendar = Calendar.current
+        let preferred = calendar.date(
+            bySettingHour: rule.preferredHour,
+            minute: rule.preferredMinute,
+            second: 0,
+            of: date
+        ) ?? date
+        let minimumFutureDate = Date().addingTimeInterval(60)
+
+        if preferred > minimumFutureDate {
+            return preferred
+        }
+
+        if calendar.isDate(date, inSameDayAs: Date()) {
+            return minimumFutureDate
+        }
+
+        return calendar.date(byAdding: .day, value: 1, to: preferred) ?? minimumFutureDate
     }
 
     private func isInQuietHours(settings: UserSettings) -> Bool {

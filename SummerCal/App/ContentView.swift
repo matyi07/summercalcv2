@@ -12,7 +12,7 @@ struct ContentView: View {
 
         ZStack {
             TabView(selection: $router.selectedTab) {
-                NavigationStack {
+                NavigationStack(path: $router.todayNavigationPath) {
                     TodayView()
                         .navigationDestination(for: AppRoute.self) { route in
                             destinationView(for: route)
@@ -21,7 +21,7 @@ struct ContentView: View {
                 .tabItem { Label(AppTab.today.title, systemImage: AppTab.today.systemImage) }
                 .tag(AppTab.today)
 
-                NavigationStack {
+                NavigationStack(path: $router.calendarNavigationPath) {
                     CalendarView()
                         .navigationDestination(for: AppRoute.self) { route in
                             destinationView(for: route)
@@ -42,7 +42,7 @@ struct ContentView: View {
                 .tabItem { Label(AppTab.money.title, systemImage: AppTab.money.systemImage) }
                 .tag(AppTab.money)
 
-                NavigationStack {
+                NavigationStack(path: $router.settingsNavigationPath) {
                     SettingsView()
                         .navigationDestination(for: AppRoute.self) { route in
                             destinationView(for: route)
@@ -86,7 +86,7 @@ struct ContentView: View {
     private func sheetView(for sheet: AppSheet) -> some View {
         switch sheet {
         case .addEvent: AddEventView()
-        case .addExpense: AddIncomeView()
+        case .addExpense: AddExpenseView()
         case .savePlace: SavePlaceView(placeId: nil)
         case .shareEvent(let eventId): ShareEventView(eventId: eventId)
         case .aiPlanDetail: AIPlanDetailView(planId: UUID())

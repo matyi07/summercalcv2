@@ -130,16 +130,19 @@ struct AddEventView: View {
             if settings.authorizationStatus == .denied {
                 await MainActor.run { showPermissionAlert = true }
             } else if settings.authorizationStatus == .notDetermined {
-                _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+                let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+                if !granted {
+                    await MainActor.run {
+                        notificationEnabled = false
+                        showPermissionAlert = true
+                    }
+                }
             }
         }
     }
 
     private func save() {
         if let event = existingEvent {
-            let timeChanged = event.startDate != startDate || event.endDate != endDate
-            let reminderChanged = event.reminderMinutesBefore != reminderMinutesBefore || event.notificationEnabled != notificationEnabled
-
             event.title = title
             event.startDate = startDate
             event.endDate = endDate
@@ -153,12 +156,10 @@ struct AddEventView: View {
             event.updatedAt = Date()
             try? modelContext.save()
 
-            if timeChanged || reminderChanged {
-                Task {
-                    await NotificationService.shared.cancelAll(forEventId: event.id)
-                    if notificationEnabled {
-                        _ = await NotificationService.shared.scheduleEventReminder(event: event, minutesBefore: reminderMinutesBefore, notes: nil)
-                    }
+            Task {
+                await NotificationService.shared.cancelAll(forEventId: event.id)
+                if notificationEnabled {
+                    _ = await NotificationService.shared.scheduleEventReminder(event: event, minutesBefore: reminderMinutesBefore, notes: nil)
                 }
             }
         } else {

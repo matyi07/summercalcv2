@@ -65,12 +65,23 @@ enum AppSheet: Identifiable {
 
 final class AppRouter: ObservableObject {
     @Published var selectedTab: AppTab = .today
-    @Published var navigationPath: [AppRoute] = []
+    @Published var todayNavigationPath: [AppRoute] = []
+    @Published var calendarNavigationPath: [AppRoute] = []
+    @Published var settingsNavigationPath: [AppRoute] = []
     @Published var presentedEventId: UUID?
     @Published var presentedSheet: AppSheet?
 
     func navigateToEvent(_ eventId: UUID) {
-        navigationPath.append(.eventDetail(eventId: eventId))
+        let route = AppRoute.eventDetail(eventId: eventId)
+        switch selectedTab {
+        case .calendar:
+            calendarNavigationPath.append(route)
+        case .settings:
+            settingsNavigationPath.append(route)
+        default:
+            selectedTab = .today
+            todayNavigationPath.append(route)
+        }
         presentedEventId = eventId
     }
 
