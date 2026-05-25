@@ -590,7 +590,7 @@ struct MoneyView: View {
 
     private func expenseRow(_ entry: ExpenseEntry) -> some View {
         let storeName = cleanedStoreName(entry.storeName)
-        HStack(spacing: 12) {
+        return HStack(spacing: 12) {
             Image(systemName: entry.category.icon)
                 .font(.title3)
                 .frame(width: 32, height: 32)
