@@ -12,13 +12,13 @@ struct PlacesView: View {
         VStack(spacing: 0) {
             searchAndFilterBar
 
+            if viewModel.locationAuthorizationStatus == .denied || viewModel.locationAuthorizationStatus == .restricted {
+                locationDeniedView
+            }
+
             if viewModel.isMapView {
                 mapContent
             } else {
-                if viewModel.locationAuthorizationStatus == .denied || viewModel.locationAuthorizationStatus == .restricted {
-                    locationDeniedView
-                }
-
                 if viewModel.isLoading {
                     ProgressView("Searching...")
                         .padding()

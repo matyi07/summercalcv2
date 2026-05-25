@@ -29,6 +29,7 @@ final class UserSettings {
     var budgetPreference: String?
     var locationEnabled: Bool?
     var approximateLocation: Bool?
+    var moneyEntryPreviewLimit: Int?
     var createdAt: Date
     var updatedAt: Date
 
@@ -59,6 +60,7 @@ final class UserSettings {
         budgetPreference: String? = "medium",
         locationEnabled: Bool? = true,
         approximateLocation: Bool? = false,
+        moneyEntryPreviewLimit: Int? = 5,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -88,6 +90,7 @@ final class UserSettings {
         self.budgetPreference = budgetPreference
         self.locationEnabled = locationEnabled
         self.approximateLocation = approximateLocation
+        self.moneyEntryPreviewLimit = moneyEntryPreviewLimit
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

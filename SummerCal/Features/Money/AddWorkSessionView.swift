@@ -13,6 +13,7 @@ struct AddWorkSessionView: View {
     @State private var hourlyRateText: String = ""
     @State private var note: String = ""
     @State private var rateErrorTrigger: Bool = false
+    @State private var saveError: String?
 
     var onSave: (() -> Void)?
 
@@ -69,6 +70,14 @@ struct AddWorkSessionView: View {
                 Section {
                     TextField("Note", text: $note, axis: .vertical)
                         .lineLimit(2...4)
+                }
+
+                if let saveError {
+                    Section {
+                        Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
                 }
 
                 Section {
@@ -165,7 +174,17 @@ struct AddWorkSessionView: View {
             modelContext.insert(session)
         }
 
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            saveError = "Could not save work session: \(error.localizedDescription)"
+            return
+        }
+        NotificationCenter.default.post(
+            name: .summerCalMoneyChanged,
+            object: nil,
+            userInfo: ["date": date]
+        )
         onSave?()
         dismiss()
     }

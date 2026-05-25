@@ -43,7 +43,7 @@ enum AppRoute: Hashable {
 
 enum AppSheet: Identifiable {
     case addEvent
-    case addExpense
+    case addExpense(openCamera: Bool)
     case savePlace(placeId: UUID?)
     case shareEvent(eventId: UUID)
     case aiPlanDetail(planId: UUID)
@@ -53,7 +53,7 @@ enum AppSheet: Identifiable {
     var id: String {
         switch self {
         case .addEvent: "add_event"
-        case .addExpense: "add_expense"
+        case .addExpense(let openCamera): openCamera ? "add_expense_camera" : "add_expense"
         case .savePlace: "save_place"
         case .shareEvent(let id): "share_\(id)"
         case .aiPlanDetail(let id): "plan_\(id)"

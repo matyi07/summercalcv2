@@ -48,11 +48,7 @@ final class NotificationBootstrapService {
         for event in events {
             await notificationService.cancelAll(forEventId: event.id)
             guard event.notificationEnabled else { continue }
-            _ = await notificationService.scheduleEventReminder(
-                event: event,
-                minutesBefore: event.reminderMinutesBefore,
-                notes: nil
-            )
+            _ = await notificationService.scheduleAllEventReminders(event: event, notes: nil)
         }
     }
 }

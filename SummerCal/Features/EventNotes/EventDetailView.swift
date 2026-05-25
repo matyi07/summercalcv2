@@ -115,6 +115,17 @@ struct EventDetailView: View {
         }
     }
 
+    func reminderSummary(_ event: CalendarEvent) -> String {
+        var labels = event.reminderOffsets().map(reminderLabel)
+        if let customReminderDate = event.customReminderDate {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+            labels.append(formatter.string(from: customReminderDate))
+        }
+        return labels.isEmpty ? "enabled" : labels.joined(separator: ", ")
+    }
+
     private func fetchEvent() {
         let descriptor = FetchDescriptor<CalendarEvent>(
             predicate: #Predicate { $0.id == eventId }
@@ -168,7 +179,7 @@ struct EventDetailView: View {
                     Image(systemName: "bell.fill")
                         .foregroundColor(.orange)
                         .font(.caption)
-                    Text("Reminder \(reminderLabel(event.reminderMinutesBefore))")
+                    Text("Reminder \(reminderSummary(event))")
                         .font(.subheadline)
                         .foregroundColor(Color(.systemGray))
                 }
@@ -525,6 +536,7 @@ struct EventDetailView: View {
         viewModel.notes.forEach { modelContext.delete($0) }
         modelContext.delete(event)
         try? modelContext.save()
+        WidgetDataService.refreshTodayEvents(modelContext: modelContext)
 
         Task {
             await NotificationService.shared.cancelAll(forEventId: event.id)

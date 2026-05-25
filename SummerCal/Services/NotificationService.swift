@@ -71,6 +71,61 @@ final class NotificationService {
     }
 
     @discardableResult
+    func scheduleEventReminder(event: CalendarEvent, triggerDate: Date, notes: [EventNote]?) async -> String? {
+        guard await ensureAuthorized() else { return nil }
+
+        guard triggerDate > Date().addingTimeInterval(5) else { return nil }
+
+        let timestamp = Int(triggerDate.timeIntervalSince1970)
+        let notificationId = "event_reminder_\(event.id.uuidString)_custom_\(timestamp)"
+        let content = UNMutableNotificationContent()
+        content.title = event.title
+        content.sound = .default
+
+        let eventFormatter = DateFormatter()
+        eventFormatter.dateStyle = .medium
+        eventFormatter.timeStyle = event.isAllDay ? .none : .short
+        var body = "Reminder for \(eventFormatter.string(from: event.startDate))"
+        if let notes = notes, !notes.isEmpty {
+            body += ". Notes: " + notes.prefix(2).map { $0.body }.joined(separator: ". ")
+        }
+        content.body = body
+        content.userInfo = ["eventId": event.id.uuidString, "notificationType": "event_reminder"]
+        content.categoryIdentifier = "EVENT_REMINDER"
+
+        let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: triggerDate)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+
+        let request = UNNotificationRequest(identifier: notificationId, content: content, trigger: trigger)
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            return notificationId
+        } catch {
+            print("Failed to schedule event notification \(notificationId): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    @discardableResult
+    func scheduleAllEventReminders(event: CalendarEvent, notes: [EventNote]?) async -> [String] {
+        guard event.notificationEnabled else { return [] }
+
+        var scheduledIds: [String] = []
+        for minutes in event.reminderOffsets() {
+            if let id = await scheduleEventReminder(event: event, minutesBefore: minutes, notes: notes) {
+                scheduledIds.append(id)
+            }
+        }
+
+        if let customReminderDate = event.customReminderDate,
+           let id = await scheduleEventReminder(event: event, triggerDate: customReminderDate, notes: notes) {
+            scheduledIds.append(id)
+        }
+
+        return scheduledIds
+    }
+
+    @discardableResult
     func scheduleSmartNotification(id: String, title: String, body: String, date: Date, categoryIdentifier: String? = nil) async -> Bool {
         guard await ensureAuthorized() else { return false }
         guard date > Date().addingTimeInterval(5) else {

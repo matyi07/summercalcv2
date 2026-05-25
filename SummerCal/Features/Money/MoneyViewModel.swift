@@ -9,6 +9,7 @@ final class MoneyViewModel {
     var workSessions: [WorkSession] = []
     var monthlyGoal: Double = 0
     var currencyCode: String = "USD"
+    var entryPreviewLimit: Int = 5
     var incomeDisplayAmounts: [UUID: Double] = [:]
     var expenseDisplayAmounts: [UUID: Double] = [:]
     var workDisplayAmounts: [UUID: Double] = [:]
@@ -62,10 +63,31 @@ final class MoneyViewModel {
         monthlyGoal > 0 ? formatCurrency(monthlyGoal) : "Not set"
     }
 
+    var recentIncomeEntries: [IncomeEntry] {
+        Array(incomeEntries.prefix(entryPreviewLimit))
+    }
+
+    var recentExpenseEntries: [ExpenseEntry] {
+        Array(expenseEntries.prefix(entryPreviewLimit))
+    }
+
+    var upcomingWorkSessions: [WorkSession] {
+        let now = Date()
+        let upcoming = workSessions
+            .filter { combinedDateTime(date: $0.date, time: $0.startTime) >= now }
+            .sorted { lhs, rhs in
+                let lhsStart = combinedDateTime(date: lhs.date, time: lhs.startTime)
+                let rhsStart = combinedDateTime(date: rhs.date, time: rhs.startTime)
+                return lhsStart < rhsStart
+            }
+        return Array(upcoming.prefix(entryPreviewLimit))
+    }
+
     func loadSettings(modelContext: ModelContext) {
         let settings = UserSettings.current(in: modelContext)
         monthlyGoal = settings.monthlyIncomeGoal ?? 0
         currencyCode = settings.currencyCode
+        entryPreviewLimit = max(1, settings.moneyEntryPreviewLimit ?? 5)
     }
 
     func saveGoal(modelContext: ModelContext) {
@@ -246,5 +268,19 @@ final class MoneyViewModel {
             return nil
         }
         return "Original: \(formatCurrency(originalAmount, currency: originalCurrency))"
+    }
+
+    private func combinedDateTime(date: Date, time: Date) -> Date {
+        let calendar = Calendar.current
+        let dateComponents = calendar.dateComponents([.year, .month, .day], from: date)
+        let timeComponents = calendar.dateComponents([.hour, .minute, .second], from: time)
+        var merged = DateComponents()
+        merged.year = dateComponents.year
+        merged.month = dateComponents.month
+        merged.day = dateComponents.day
+        merged.hour = timeComponents.hour
+        merged.minute = timeComponents.minute
+        merged.second = timeComponents.second
+        return calendar.date(from: merged) ?? date
     }
 }

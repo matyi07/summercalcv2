@@ -14,6 +14,7 @@ struct TodayView: View {
     @State private var lastWeatherFetch: Date = .distantPast
     @State private var selectedSuggestion: ActivitySuggestion?
     @State private var suggestionPreferenceText: String = ""
+    @FocusState private var suggestionPreferenceFocused: Bool
 
     @Query(sort: \CalendarEvent.startDate) private var allEvents: [CalendarEvent]
     @Query(sort: \ActivitySuggestion.date) private var allSuggestions: [ActivitySuggestion]
@@ -79,6 +80,15 @@ struct TodayView: View {
         }
         .sheet(item: $selectedSuggestion) { suggestion in
             suggestionDetailView(suggestion)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    suggestionPreferenceFocused = false
+                }
+            }
         }
         .task {
             await viewModel.loadDay(modelContext: modelContext)
@@ -219,7 +229,7 @@ struct TodayView: View {
                                 Image(systemName: "bell.fill")
                                     .font(.caption2)
                                     .foregroundColor(.orange)
-                                Text(reminderLabel(event.reminderMinutesBefore))
+                                Text(reminderSummary(event))
                                     .font(.caption2)
                                     .foregroundStyle(Color(.systemGray))
                             }
@@ -252,6 +262,21 @@ struct TodayView: View {
         timeFormatter.timeStyle = .short
 
         return "\(dateFormatter.string(from: event.startDate)), \(timeFormatter.string(from: event.startDate)) - \(timeFormatter.string(from: event.endDate))"
+    }
+
+    private func reminderSummary(_ event: CalendarEvent) -> String {
+        var labels = event.reminderOffsets().prefix(2).map(reminderLabel)
+        if event.customReminderDate != nil {
+            labels.append("Custom")
+        }
+        if labels.isEmpty {
+            return "On"
+        }
+        let totalCount = event.reminderOffsets().count + (event.customReminderDate == nil ? 0 : 1)
+        if totalCount > labels.count {
+            return labels.joined(separator: ", ") + " +\(totalCount - labels.count)"
+        }
+        return labels.joined(separator: ", ")
     }
 
     private func reminderLabel(_ minutes: Int) -> String {
@@ -353,8 +378,14 @@ struct TodayView: View {
             TextField("Suggestion preferences (optional)", text: $suggestionPreferenceText, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1...3)
+                .focused($suggestionPreferenceFocused)
+                .submitLabel(.done)
+                .onSubmit {
+                    suggestionPreferenceFocused = false
+                }
 
             Button {
+                suggestionPreferenceFocused = false
                 Task {
                     viewModel.isLoadingSuggestions = true
                     viewModel.suggestionError = nil

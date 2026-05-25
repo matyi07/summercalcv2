@@ -220,6 +220,15 @@ struct SettingsView: View {
                     .foregroundColor(.orange)
                 }
             }
+
+            Stepper(value: $viewModel.moneyEntryPreviewLimit, in: 1...50) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Money Entries Shown")
+                    Text("\(viewModel.moneyEntryPreviewLimit) entries per section before More")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         } header: {
             Text("Currency & Goals")
                 .font(.footnote)

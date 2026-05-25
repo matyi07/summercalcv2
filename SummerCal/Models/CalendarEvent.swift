@@ -15,6 +15,8 @@ final class CalendarEvent {
     var recurrenceRule: String?
     var notificationEnabled: Bool
     var reminderMinutesBefore: Int
+    var reminderMinutesBeforeList: String?
+    var customReminderDate: Date?
     var createdAt: Date
     var updatedAt: Date
 
@@ -29,8 +31,10 @@ final class CalendarEvent {
         category: String? = nil,
         isOutdoor: Bool = false,
         recurrenceRule: String? = nil,
-        notificationEnabled: Bool = false,
+        notificationEnabled: Bool = true,
         reminderMinutesBefore: Int = 30,
+        reminderMinutesBeforeList: String? = "30",
+        customReminderDate: Date? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -46,11 +50,30 @@ final class CalendarEvent {
         self.recurrenceRule = recurrenceRule
         self.notificationEnabled = notificationEnabled
         self.reminderMinutesBefore = reminderMinutesBefore
+        self.reminderMinutesBeforeList = reminderMinutesBeforeList
+        self.customReminderDate = customReminderDate
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
 
     func overlaps(_ interval: DateInterval) -> Bool {
         startDate < interval.end && endDate > interval.start
+    }
+
+    func reminderOffsets() -> [Int] {
+        guard let reminderMinutesBeforeList else {
+            return [reminderMinutesBefore]
+        }
+
+        let rawOffsets = reminderMinutesBeforeList
+            .split(separator: ",")
+            .compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        return Array(Set(rawOffsets)).sorted()
+    }
+
+    func setReminderOffsets(_ offsets: [Int]) {
+        let cleaned = Array(Set(offsets.filter { $0 >= 0 })).sorted()
+        reminderMinutesBeforeList = cleaned.map(String.init).joined(separator: ",")
+        reminderMinutesBefore = cleaned.first ?? 30
     }
 }

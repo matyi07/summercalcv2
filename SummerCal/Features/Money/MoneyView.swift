@@ -10,6 +10,9 @@ struct MoneyView: View {
     @State private var editIncome: IncomeEntry?
     @State private var editExpense: ExpenseEntry?
     @State private var editSession: WorkSession?
+    @State private var showAllIncome: Bool = false
+    @State private var showAllExpenses: Bool = false
+    @State private var showAllWorkSessions: Bool = false
 
     var body: some View {
         List {
@@ -48,7 +51,7 @@ struct MoneyView: View {
                         description: Text("Add your first income entry to start tracking.")
                     )
                 } else {
-                    ForEach(viewModel.incomeEntries) { entry in
+                    ForEach(visibleIncomeEntries) { entry in
                         incomeRow(entry)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -58,9 +61,15 @@ struct MoneyView: View {
                     }
                     .onDelete { offsets in
                         for idx in offsets {
-                            viewModel.deleteIncomeEntry(viewModel.incomeEntries[idx], modelContext: modelContext)
+                            viewModel.deleteIncomeEntry(visibleIncomeEntries[idx], modelContext: modelContext)
                         }
                     }
+                    moreButton(
+                        isShowingAll: $showAllIncome,
+                        totalCount: viewModel.incomeEntries.count,
+                        defaultCount: viewModel.recentIncomeEntries.count,
+                        label: "income entries"
+                    )
                 }
                 Button {
                     editIncome = nil
@@ -80,7 +89,7 @@ struct MoneyView: View {
                         description: Text("Track your spending by adding expenses.")
                     )
                 } else {
-                    ForEach(viewModel.expenseEntries) { entry in
+                    ForEach(visibleExpenseEntries) { entry in
                         expenseRow(entry)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -90,9 +99,15 @@ struct MoneyView: View {
                     }
                     .onDelete { offsets in
                         for idx in offsets {
-                            viewModel.deleteExpenseEntry(viewModel.expenseEntries[idx], modelContext: modelContext)
+                            viewModel.deleteExpenseEntry(visibleExpenseEntries[idx], modelContext: modelContext)
                         }
                     }
+                    moreButton(
+                        isShowingAll: $showAllExpenses,
+                        totalCount: viewModel.expenseEntries.count,
+                        defaultCount: viewModel.recentExpenseEntries.count,
+                        label: "expenses"
+                    )
                 }
                 Button {
                     editExpense = nil
@@ -111,8 +126,20 @@ struct MoneyView: View {
                         systemImage: "clock.badge.checkmark",
                         description: Text("Track your hourly work and earnings.")
                     )
+                } else if visibleWorkSessions.isEmpty {
+                    ContentUnavailableView(
+                        "No Upcoming Work Sessions",
+                        systemImage: "clock",
+                        description: Text("Tap More to see past work sessions for this month.")
+                    )
+                    moreButton(
+                        isShowingAll: $showAllWorkSessions,
+                        totalCount: viewModel.workSessions.count,
+                        defaultCount: 0,
+                        label: "work sessions"
+                    )
                 } else {
-                    ForEach(viewModel.workSessions) { session in
+                    ForEach(visibleWorkSessions) { session in
                         workSessionRow(session)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -122,9 +149,15 @@ struct MoneyView: View {
                     }
                     .onDelete { offsets in
                         for idx in offsets {
-                            viewModel.deleteWorkSession(viewModel.workSessions[idx], modelContext: modelContext)
+                            viewModel.deleteWorkSession(visibleWorkSessions[idx], modelContext: modelContext)
                         }
                     }
+                    moreButton(
+                        isShowingAll: $showAllWorkSessions,
+                        totalCount: viewModel.workSessions.count,
+                        defaultCount: viewModel.upcomingWorkSessions.count,
+                        label: "work sessions"
+                    )
                 }
                 Button {
                     editSession = nil
@@ -146,6 +179,13 @@ struct MoneyView: View {
             reloadMoney()
         }
         .onChange(of: viewModel.selectedMonth) { _, _ in
+            resetSectionExpansion()
+            reloadMoney()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .summerCalMoneyChanged)) { notification in
+            if let savedDate = notification.userInfo?["date"] as? Date {
+                viewModel.selectedMonth = savedDate
+            }
             reloadMoney()
         }
         .sheet(isPresented: $showAddIncome) {
@@ -154,9 +194,16 @@ struct MoneyView: View {
             }
         }
         .sheet(isPresented: $showAddExpense) {
-            AddExpenseView(existingEntry: editExpense) {
-                reloadMoney()
-            }
+            AddExpenseView(
+                existingEntry: editExpense,
+                onSave: {
+                    reloadMoney()
+                },
+                onSavedExpense: { entry in
+                    viewModel.selectedMonth = entry.date
+                    reloadMoney()
+                }
+            )
         }
         .sheet(isPresented: $showAddWork) {
             AddWorkSessionView(existingSession: editSession) {
@@ -170,6 +217,51 @@ struct MoneyView: View {
         viewModel.loadEntries(modelContext: modelContext)
         Task {
             await viewModel.refreshCurrencyConversions()
+        }
+    }
+
+    private var visibleIncomeEntries: [IncomeEntry] {
+        showAllIncome ? viewModel.incomeEntries : viewModel.recentIncomeEntries
+    }
+
+    private var visibleExpenseEntries: [ExpenseEntry] {
+        showAllExpenses ? viewModel.expenseEntries : viewModel.recentExpenseEntries
+    }
+
+    private var visibleWorkSessions: [WorkSession] {
+        showAllWorkSessions ? viewModel.workSessions : viewModel.upcomingWorkSessions
+    }
+
+    private func resetSectionExpansion() {
+        showAllIncome = false
+        showAllExpenses = false
+        showAllWorkSessions = false
+    }
+
+    @ViewBuilder
+    private func moreButton(
+        isShowingAll: Binding<Bool>,
+        totalCount: Int,
+        defaultCount: Int,
+        label: String
+    ) -> some View {
+        if totalCount > defaultCount {
+            Button {
+                withAnimation {
+                    isShowingAll.wrappedValue.toggle()
+                }
+            } label: {
+                HStack {
+                    Label(
+                        isShowingAll.wrappedValue ? "Show Less" : "More \(label)",
+                        systemImage: isShowingAll.wrappedValue ? "chevron.up" : "chevron.down"
+                    )
+                    Spacer()
+                    Text("\(totalCount)")
+                        .font(.caption)
+                        .foregroundStyle(Color(.systemGray))
+                }
+            }
         }
     }
 

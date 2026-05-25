@@ -68,6 +68,16 @@ final class CalendarViewModel {
         return Array(symbols[first...] + symbols[..<first])
     }
 
+    var eventsInCurrentMonth: [CalendarEvent] {
+        guard let monthStart = calendar.startOfMonth(for: currentMonth),
+              let nextMonth = calendar.date(byAdding: .month, value: 1, to: monthStart) else {
+            return []
+        }
+        return allEvents.filter { event in
+            event.startDate >= monthStart && event.startDate < nextMonth
+        }.sorted { $0.startDate < $1.startDate }
+    }
+
     func goToPreviousMonth() {
         guard let prev = calendar.date(byAdding: .month, value: -1, to: currentMonth) else { return }
         currentMonth = prev

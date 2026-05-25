@@ -23,6 +23,7 @@ let package = Package(
                 "Models",
                 "Features",
                 "Services",
+                "Shared",
                 "Storage",
                 "Utilities"
             ],

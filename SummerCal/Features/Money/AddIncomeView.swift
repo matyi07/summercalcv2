@@ -233,8 +233,19 @@ struct AddIncomeView: View {
             }
         }
 
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            saveError = "Could not save income: \(error.localizedDescription)"
+            isSaving = false
+            return
+        }
         isSaving = false
+        NotificationCenter.default.post(
+            name: .summerCalMoneyChanged,
+            object: nil,
+            userInfo: ["date": date]
+        )
         onSave?()
         dismiss()
     }

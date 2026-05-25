@@ -167,9 +167,8 @@ final class SmartNotificationService {
     private func scheduleUpcomingEventNotifications(events: [CalendarEvent], notes: [EventNote]?) async {
         for event in events {
             guard event.notificationEnabled else { continue }
-            _ = await notificationService.scheduleEventReminder(
+            _ = await notificationService.scheduleAllEventReminders(
                 event: event,
-                minutesBefore: event.reminderMinutesBefore,
                 notes: notes?.filter { $0.eventId == event.id }
             )
         }

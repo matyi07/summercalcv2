@@ -43,8 +43,23 @@ struct AddExpenseView: View {
     @State private var scannedCount: Int = 0
     @State private var showCamera: Bool = false
     @State private var capturedUIImage: UIImage?
+    @State private var didAutoOpenCamera: Bool = false
 
     var onSave: (() -> Void)?
+    var onSavedExpense: ((ExpenseEntry) -> Void)?
+    var startWithCamera: Bool = false
+
+    init(
+        existingEntry: ExpenseEntry? = nil,
+        startWithCamera: Bool = false,
+        onSave: (() -> Void)? = nil,
+        onSavedExpense: ((ExpenseEntry) -> Void)? = nil
+    ) {
+        self.existingEntry = existingEntry
+        self.startWithCamera = startWithCamera
+        self.onSave = onSave
+        self.onSavedExpense = onSavedExpense
+    }
 
     private var isEditing: Bool { existingEntry != nil }
     private let paymentMethods = ["card", "cash", "transfer", "direct debit"]
@@ -159,6 +174,11 @@ struct AddExpenseView: View {
                     if let img = entry.receiptImageData {
                         receiptImages = [img]
                         scannedCount = 1
+                    }
+                } else if startWithCamera && !didAutoOpenCamera {
+                    didAutoOpenCamera = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        requestCameraAndShow()
                     }
                 }
             }
@@ -415,6 +435,7 @@ struct AddExpenseView: View {
         let storedExchangeRate = exchangeRateToEntryCurrency ?? conversion.exchangeRate
         let storedExchangeDate = exchangeRateDate ?? conversion.rateDate
 
+        let savedEntry: ExpenseEntry
         if let entry = existingEntry {
             entry.date = date
             entry.amount = conversion.convertedAmount
@@ -427,6 +448,7 @@ struct AddExpenseView: View {
             entry.paymentMethod = paymentMethod
             entry.note = note
             entry.receiptImageData = receiptImages.first
+            savedEntry = entry
         } else {
             let entry = ExpenseEntry(
                 date: date,
@@ -442,10 +464,23 @@ struct AddExpenseView: View {
                 receiptImageData: receiptImages.first
             )
             modelContext.insert(entry)
+            savedEntry = entry
         }
 
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            scanError = "Could not save expense: \(error.localizedDescription)"
+            isSaving = false
+            return
+        }
         isSaving = false
+        onSavedExpense?(savedEntry)
+        NotificationCenter.default.post(
+            name: .summerCalMoneyChanged,
+            object: nil,
+            userInfo: ["date": savedEntry.date]
+        )
         onSave?()
         dismiss()
     }
@@ -503,9 +538,15 @@ struct AddExpenseView: View {
                     existingNote: note
                 )
                 if !isEditing && receiptImages.count > 1 {
-                    await MainActor.run {
-                        modelContext.insert(expenseEntry(from: draft))
-                        try? modelContext.save()
+                    try await MainActor.run {
+                        let entry = expenseEntry(from: draft)
+                        modelContext.insert(entry)
+                        do {
+                            try modelContext.save()
+                        } catch {
+                            modelContext.delete(entry)
+                            throw error
+                        }
                     }
                     savedCount += 1
                 } else {
@@ -530,6 +571,7 @@ struct AddExpenseView: View {
         await MainActor.run {
             if !isEditing && receiptImages.count > 1 {
                 isScanning = false
+                NotificationCenter.default.post(name: .summerCalMoneyChanged, object: nil)
                 onSave?()
                 if failureMessages.isEmpty {
                     scanError = nil

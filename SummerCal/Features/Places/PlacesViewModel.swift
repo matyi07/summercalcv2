@@ -58,7 +58,7 @@ enum PlaceCategory: String, CaseIterable, Identifiable {
 final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
     var searchText: String = ""
     var selectedCategory: PlaceCategory = .all
-    var isMapView: Bool = false
+    var isMapView: Bool = true
     var placeResults: [PlaceCandidate] = []
     var savedPlaces: [PlaceCandidate] = []
     var isLoading: Bool = false

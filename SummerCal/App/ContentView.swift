@@ -60,7 +60,11 @@ struct ContentView: View {
         }
         .task {
             locationService.requestWhenInUsePermission()
+            WidgetDataService.refreshTodayEvents(modelContext: modelContext)
             await NotificationBootstrapService().refresh(modelContext: modelContext)
+        }
+        .onOpenURL { url in
+            handleDeepLink(url)
         }
         .task(priority: .background) {
             GMSServices.provideAPIKey(GoogleAPI.defaultKey)
@@ -87,12 +91,26 @@ struct ContentView: View {
     private func sheetView(for sheet: AppSheet) -> some View {
         switch sheet {
         case .addEvent: AddEventView()
-        case .addExpense: AddExpenseView()
+        case .addExpense(let openCamera): AddExpenseView(startWithCamera: openCamera)
         case .savePlace: SavePlaceView(placeId: nil)
         case .shareEvent(let eventId): ShareEventView(eventId: eventId)
         case .aiPlanDetail: AIPlanDetailView(planId: UUID())
         case .quickNote(let eventId): QuickNoteView(eventId: eventId)
         case .settings: SettingsView()
+        }
+    }
+
+    private func handleDeepLink(_ url: URL) {
+        guard url.scheme == SummerCalWidgetShared.appURLScheme else { return }
+
+        if url.host == "today" {
+            router.selectedTab = .today
+        } else if url.host == "add-expense" {
+            let shouldOpenCamera = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .contains(where: { $0.name == "camera" && $0.value == "1" }) ?? false
+            router.selectedTab = .money
+            router.showSheet(.addExpense(openCamera: shouldOpenCamera))
         }
     }
 }

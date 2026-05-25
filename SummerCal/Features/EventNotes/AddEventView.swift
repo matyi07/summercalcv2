@@ -16,9 +16,13 @@ struct AddEventView: View {
     @State private var notes: String = ""
     @State private var category: String = "general"
     @State private var isOutdoor: Bool = false
-    @State private var notificationEnabled: Bool = false
+    @State private var notificationEnabled: Bool = true
     @State private var reminderMinutesBefore: Int = 30
+    @State private var selectedReminderOffsets: Set<Int> = [30]
+    @State private var hasCustomReminderDate: Bool = false
+    @State private var customReminderDate: Date = Date().addingTimeInterval(30 * 60)
     @State private var showPermissionAlert: Bool = false
+    @State private var saveError: String?
 
     private let categories = ["general", "meeting", "workout", "appointment", "travel", "social", "errand"]
     private let reminderOptions = [0, 5, 10, 15, 30, 60, 1440]
@@ -34,6 +38,14 @@ struct AddEventView: View {
                     Toggle("All Day", isOn: $isAllDay)
 
                     DatePicker("Starts", selection: $startDate, displayedComponents: isAllDay ? [.date] : [.date, .hourAndMinute])
+                        .onChange(of: startDate) { _, newStart in
+                            if endDate < newStart {
+                                endDate = newStart.addingTimeInterval(3600)
+                            }
+                            if customReminderDate > newStart {
+                                customReminderDate = defaultCustomReminderDate(for: newStart)
+                            }
+                        }
 
                     DatePicker("Ends", selection: $endDate, in: startDate..., displayedComponents: isAllDay ? [.date] : [.date, .hourAndMinute])
                         .onChange(of: startDate) { _, newStart in
@@ -61,20 +73,58 @@ struct AddEventView: View {
                         .frame(minHeight: 100)
                 }
 
+                if let saveError {
+                    Section {
+                        Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+
                 Section {
                     Toggle("Enable Reminder", isOn: $notificationEnabled)
                         .onChange(of: notificationEnabled) { _, enabled in
                             if enabled { checkNotificationPermission() }
                         }
                     if notificationEnabled {
-                        Picker("Remind", selection: $reminderMinutesBefore) {
-                            Text("At time of event").tag(0)
-                            Text("5 minutes before").tag(5)
-                            Text("10 minutes before").tag(10)
-                            Text("15 minutes before").tag(15)
-                            Text("30 minutes before").tag(30)
-                            Text("1 hour before").tag(60)
-                            Text("1 day before").tag(1440)
+                        ForEach(reminderOptions, id: \.self) { minutes in
+                            Toggle(reminderLabel(minutes), isOn: Binding(
+                                get: { selectedReminderOffsets.contains(minutes) },
+                                set: { enabled in
+                                    if enabled {
+                                        selectedReminderOffsets.insert(minutes)
+                                    } else {
+                                        selectedReminderOffsets.remove(minutes)
+                                    }
+                                    if selectedReminderOffsets.isEmpty && !hasCustomReminderDate {
+                                        selectedReminderOffsets.insert(30)
+                                    }
+                                }
+                            ))
+                        }
+
+                        Toggle("Custom reminder date", isOn: $hasCustomReminderDate)
+                            .onChange(of: hasCustomReminderDate) { _, enabled in
+                                if enabled && customReminderDate > startDate {
+                                    customReminderDate = defaultCustomReminderDate(for: startDate)
+                                }
+                                if !enabled && selectedReminderOffsets.isEmpty {
+                                    selectedReminderOffsets.insert(30)
+                                }
+                            }
+
+                        if hasCustomReminderDate {
+                            DatePicker(
+                                "Reminder",
+                                selection: $customReminderDate,
+                                in: customReminderRange,
+                                displayedComponents: [.date, .hourAndMinute]
+                            )
+                            if customReminderDate > startDate {
+                                Label("Custom reminders should be before the event start.", systemImage: "exclamationmark.triangle.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
                         }
                     }
                 } header: {
@@ -89,26 +139,42 @@ struct AddEventView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        save()
-                        dismiss()
+                        if save() {
+                            dismiss()
+                        }
                     }
                     .disabled(title.isEmpty)
                 }
             }
-        .onAppear {
-            if let event = existingEvent {
-                title = event.title
-                startDate = event.startDate
-                endDate = event.endDate
-                isAllDay = event.isAllDay
-                location = event.location ?? ""
-                notes = event.notes ?? ""
-                category = event.category ?? "general"
-                isOutdoor = event.isOutdoor
-                notificationEnabled = event.notificationEnabled
-                reminderMinutesBefore = event.reminderMinutesBefore
+            .onAppear {
+                if existingEvent == nil {
+                    customReminderDate = defaultCustomReminderDate(for: startDate)
+                    checkNotificationPermission()
+                }
+                if let event = existingEvent {
+                    title = event.title
+                    startDate = event.startDate
+                    endDate = event.endDate
+                    isAllDay = event.isAllDay
+                    location = event.location ?? ""
+                    notes = event.notes ?? ""
+                    category = event.category ?? "general"
+                    isOutdoor = event.isOutdoor
+                    notificationEnabled = event.notificationEnabled
+                    reminderMinutesBefore = event.reminderMinutesBefore
+                    selectedReminderOffsets = Set(event.reminderOffsets())
+                    if selectedReminderOffsets.isEmpty && event.customReminderDate == nil {
+                        selectedReminderOffsets = [event.reminderMinutesBefore]
+                    }
+                    if let date = event.customReminderDate {
+                        hasCustomReminderDate = true
+                        customReminderDate = date
+                    } else {
+                        hasCustomReminderDate = false
+                        customReminderDate = defaultCustomReminderDate(for: event.startDate)
+                    }
+                }
             }
-        }
         .alert("Notifications Disabled", isPresented: $showPermissionAlert) {
             Button("Open Settings") {
                 if let url = URL(string: UIApplication.openSettingsURLString) {
@@ -141,7 +207,11 @@ struct AddEventView: View {
         }
     }
 
-    private func save() {
+    private func save() -> Bool {
+        saveError = nil
+        let selectedOffsets = Array(selectedReminderOffsets).sorted()
+        let sanitizedCustomReminder = hasCustomReminderDate ? min(customReminderDate, startDate) : nil
+
         if let event = existingEvent {
             event.title = title
             event.startDate = startDate
@@ -152,16 +222,24 @@ struct AddEventView: View {
             event.category = category
             event.isOutdoor = isOutdoor
             event.notificationEnabled = notificationEnabled
-            event.reminderMinutesBefore = reminderMinutesBefore
+            event.setReminderOffsets(selectedOffsets)
+            reminderMinutesBefore = event.reminderMinutesBefore
+            event.customReminderDate = sanitizedCustomReminder
             event.updatedAt = Date()
-            try? modelContext.save()
+            do {
+                try modelContext.save()
+            } catch {
+                saveError = "Could not save event: \(error.localizedDescription)"
+                return false
+            }
 
             Task {
                 await NotificationService.shared.cancelAll(forEventId: event.id)
                 if notificationEnabled {
-                    _ = await NotificationService.shared.scheduleEventReminder(event: event, minutesBefore: reminderMinutesBefore, notes: nil)
+                    _ = await NotificationService.shared.scheduleAllEventReminders(event: event, notes: nil)
                 }
             }
+            WidgetDataService.refreshTodayEvents(modelContext: modelContext)
         } else {
             let event = CalendarEvent(
                 title: title,
@@ -173,17 +251,50 @@ struct AddEventView: View {
                 category: category,
                 isOutdoor: isOutdoor,
                 notificationEnabled: notificationEnabled,
-                reminderMinutesBefore: reminderMinutesBefore
+                reminderMinutesBefore: selectedOffsets.first ?? 30,
+                reminderMinutesBeforeList: selectedOffsets.map(String.init).joined(separator: ","),
+                customReminderDate: sanitizedCustomReminder
             )
             modelContext.insert(event)
-            try? modelContext.save()
+            do {
+                try modelContext.save()
+            } catch {
+                modelContext.delete(event)
+                saveError = "Could not save event: \(error.localizedDescription)"
+                return false
+            }
 
             if notificationEnabled {
                 Task {
-                    _ = await NotificationService.shared.scheduleEventReminder(event: event, minutesBefore: reminderMinutesBefore, notes: nil)
+                    _ = await NotificationService.shared.scheduleAllEventReminders(event: event, notes: nil)
                 }
             }
+            WidgetDataService.refreshTodayEvents(modelContext: modelContext)
         }
+        return true
+    }
+
+    private func reminderLabel(_ minutes: Int) -> String {
+        switch minutes {
+        case 0: return "At time of event"
+        case 60: return "1 hour before"
+        case 1440: return "1 day before"
+        default: return "\(minutes) minutes before"
+        }
+    }
+
+    private func defaultCustomReminderDate(for start: Date) -> Date {
+        let soon = Date().addingTimeInterval(60)
+        if start <= soon {
+            return max(start, Date())
+        }
+        return max(soon, start.addingTimeInterval(-30 * 60))
+    }
+
+    private var customReminderRange: ClosedRange<Date> {
+        let lower = Date()
+        let upper = max(startDate, lower)
+        return lower...upper
     }
 
     private func iconForCategory(_ category: String) -> String {

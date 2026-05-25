@@ -27,6 +27,8 @@ targets:
     dependencies:
       - package: GoogleMaps
         product: GoogleMaps
+      - target: SummerCalWidget
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.summercal.v2
@@ -38,6 +40,10 @@ targets:
         CFBundleDisplayName: SummerCal
         CFBundleShortVersionString: "2.0"
         CFBundleVersion: "1"
+        CFBundleURLTypes:
+          - CFBundleURLName: com.summercal.v2
+            CFBundleURLSchemes:
+              - summercal
         LSRequiresIPhoneOS: true
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
@@ -60,3 +66,29 @@ targets:
       path: SummerCal/SummerCal.entitlements
       properties:
         com.apple.developer.weatherkit: true
+        com.apple.security.application-groups:
+          - group.com.summercal.v2
+
+  SummerCalWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: SummerCalWidget
+      - path: SummerCal/Shared/WidgetSharedData.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.summercal.v2.widgets
+        INFOPLIST_FILE: SummerCalWidget/Info.plist
+    info:
+      path: SummerCalWidget/Info.plist
+      properties:
+        CFBundleDisplayName: SummerCal Widgets
+        CFBundleShortVersionString: "2.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: SummerCalWidget/SummerCalWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.summercal.v2

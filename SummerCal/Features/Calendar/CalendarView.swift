@@ -8,6 +8,7 @@ struct CalendarView: View {
     @State private var viewModel = CalendarViewModel()
     @State private var showAddEvent = false
     @State private var editEvent: CalendarEvent?
+    @State private var showWholeMonth = false
 
     @Query(sort: \CalendarEvent.startDate) private var events: [CalendarEvent]
     @Query(sort: \WorkSession.date) private var workSessions: [WorkSession]
@@ -21,6 +22,8 @@ struct CalendarView: View {
             weekdayHeadersRow
 
             colorLegend
+
+            eventScopePicker
 
             monthGrid
 
@@ -130,6 +133,16 @@ struct CalendarView: View {
         .padding(.horizontal, 8)
     }
 
+    private var eventScopePicker: some View {
+        Picker("Events", selection: $showWholeMonth) {
+            Text("Day").tag(false)
+            Text("Month").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+    }
+
     private var monthGrid: some View {
         LazyVGrid(columns: columns, spacing: 8) {
             ForEach(viewModel.daysInMonth, id: \.self) { date in
@@ -173,46 +186,61 @@ struct CalendarView: View {
 
     private var agendaList: some View {
         List {
-            if viewModel.eventsOnSelectedDay.isEmpty {
-                HStack {
-                    Spacer()
-                    VStack(spacing: 8) {
-                        Image(systemName: "calendar.badge.plus")
-                            .font(.title2)
-                            .foregroundColor(Color(.systemGray))
-                        Text("No events")
-                            .font(.subheadline)
-                            .foregroundColor(Color(.systemGray))
+            Section {
+                if displayedEvents.isEmpty {
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 8) {
+                            Image(systemName: "calendar.badge.plus")
+                                .font(.title2)
+                                .foregroundColor(Color(.systemGray))
+                            Text("No events")
+                                .font(.subheadline)
+                                .foregroundColor(Color(.systemGray))
+                        }
+                        .padding(.vertical, 20)
+                        Spacer()
                     }
-                    .padding(.vertical, 20)
-                    Spacer()
-                }
-                .listRowBackground(Color.clear)
-            } else {
-                ForEach(viewModel.eventsOnSelectedDay) { event in
-                    Button {
-                        appRouter.navigateToEvent(event.id)
-                    } label: {
-                        eventRow(event)
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    .listRowBackground(Color.clear)
+                } else {
+                    ForEach(displayedEvents) { event in
                         Button {
-                            editEvent = event
+                            appRouter.navigateToEvent(event.id)
                         } label: {
-                            Label("Edit", systemImage: "pencil")
+                            eventRow(event)
                         }
-                        .tint(.orange)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button {
+                                editEvent = event
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.orange)
 
-                        Button(role: .destructive) {
-                            deleteEvent(event)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                            Button(role: .destructive) {
+                                deleteEvent(event)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
                 }
+            } header: {
+                Text(showWholeMonth ? "Events This Month" : "Events on \(selectedDayLabel)")
             }
         }
         .listStyle(.plain)
+    }
+
+    private var displayedEvents: [CalendarEvent] {
+        showWholeMonth ? viewModel.eventsInCurrentMonth : viewModel.eventsOnSelectedDay
+    }
+
+    private var selectedDayLabel: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: viewModel.selectedDay)
     }
 
     private func eventRow(_ event: CalendarEvent) -> some View {
@@ -226,15 +254,9 @@ struct CalendarView: View {
                     .font(.body.weight(.medium))
                     .foregroundColor(.primary)
 
-                if event.isAllDay {
-                    Text("All Day")
-                        .font(.caption)
-                        .foregroundColor(Color(.systemGray))
-                } else {
-                    Text("\(event.startDate, style: .time) – \(event.endDate, style: .time)")
-                        .font(.caption)
-                        .foregroundColor(Color(.systemGray))
-                }
+                Text(eventSubtitle(event))
+                    .font(.caption)
+                    .foregroundColor(Color(.systemGray))
             }
         }
         .frame(minHeight: 44)
@@ -245,6 +267,25 @@ struct CalendarView: View {
         Task { await NotificationService.shared.cancelAll(forEventId: event.id) }
         modelContext.delete(event)
         try? modelContext.save()
+        WidgetDataService.refreshTodayEvents(modelContext: modelContext)
+    }
+
+    private func monthEventDateLabel(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: date)
+    }
+
+    private func eventSubtitle(_ event: CalendarEvent) -> String {
+        let prefix = showWholeMonth ? "\(monthEventDateLabel(event.startDate)) - " : ""
+        if event.isAllDay {
+            return "\(prefix)All Day"
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return "\(prefix)\(formatter.string(from: event.startDate)) - \(formatter.string(from: event.endDate))"
     }
 
     private func iconForCategory(_ category: String?) -> String {
