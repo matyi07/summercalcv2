@@ -2,8 +2,8 @@ import Foundation
 import UIKit
 
 enum ReceiptImageNormalizer {
-    private static let maxDimension: CGFloat = 1800
-    private static let maxByteCount = 1_500_000
+    private static let maxDimension: CGFloat = 1280
+    private static let maxByteCount = 850_000
 
     static func jpegData(from data: Data) throws -> Data {
         guard let image = UIImage(data: data) else {
@@ -14,13 +14,13 @@ enum ReceiptImageNormalizer {
 
     static func jpegData(from image: UIImage) throws -> Data {
         let rendered = renderForReceiptScan(image, maxDimension: maxDimension)
-        var quality: CGFloat = 0.88
+        var quality: CGFloat = 0.82
 
         guard var data = rendered.jpegData(compressionQuality: quality), !data.isEmpty else {
             throw makeError("Could not convert this photo to JPEG.")
         }
 
-        while data.count > maxByteCount && quality > 0.35 {
+        while data.count > maxByteCount && quality > 0.32 {
             quality -= 0.08
             if let compressed = rendered.jpegData(compressionQuality: quality), !compressed.isEmpty {
                 data = compressed
@@ -31,7 +31,7 @@ enum ReceiptImageNormalizer {
 
         if data.count > maxByteCount {
             let smaller = renderForReceiptScan(image, maxDimension: maxDimension * 0.75)
-            if let compressed = smaller.jpegData(compressionQuality: 0.55), !compressed.isEmpty {
+            if let compressed = smaller.jpegData(compressionQuality: 0.48), !compressed.isEmpty {
                 data = compressed
             }
         }

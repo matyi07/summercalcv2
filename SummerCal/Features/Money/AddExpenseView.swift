@@ -7,6 +7,11 @@ import AVFoundation
 private struct ReceiptExpenseDraft {
     let date: Date
     let amount: Double
+    let currencyCode: String
+    let originalAmount: Double
+    let originalCurrencyCode: String
+    let exchangeRateToEntryCurrency: Double?
+    let exchangeRateDate: String?
     let category: ExpenseCategory
     let paymentMethod: String
     let note: String
@@ -23,11 +28,17 @@ struct AddExpenseView: View {
     @State private var amountText: String = ""
     @State private var category: ExpenseCategory = .other
     @State private var paymentMethod: String = "card"
+    @State private var entryCurrencyCode: String = ""
+    @State private var originalAmount: Double?
+    @State private var originalCurrencyCode: String?
+    @State private var exchangeRateToEntryCurrency: Double?
+    @State private var exchangeRateDate: String?
     @State private var note: String = ""
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var receiptImages: [Data] = []
     @State private var amountErrorTrigger: Bool = false
     @State private var isScanning: Bool = false
+    @State private var isSaving: Bool = false
     @State private var scanError: String?
     @State private var scannedCount: Int = 0
     @State private var showCamera: Bool = false
@@ -37,6 +48,7 @@ struct AddExpenseView: View {
 
     private var isEditing: Bool { existingEntry != nil }
     private let paymentMethods = ["card", "cash", "transfer", "direct debit"]
+    private let currencies = ["USD", "EUR", "GBP", "HUF", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN", "BRL", "KRW"]
 
     private var sanitizedAmount: Double {
         let cleaned = amountText.replacingOccurrences(of: ",", with: ".")
@@ -51,6 +63,10 @@ struct AddExpenseView: View {
         UserSettings.current(in: modelContext).currencyCode
     }
 
+    private var selectedCurrencyCode: String {
+        entryCurrencyCode.isEmpty ? currencyCode : entryCurrencyCode
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -59,8 +75,14 @@ struct AddExpenseView: View {
                 }
 
                 Section {
+                    Picker("Currency", selection: $entryCurrencyCode) {
+                        ForEach(currencies, id: \.self) { code in
+                            Text(code).tag(code)
+                        }
+                    }
+
                     HStack {
-                        Text(currencyCode)
+                        Text(selectedCurrencyCode)
                             .foregroundStyle(Color(.systemGray))
                         TextField("Amount", text: $amountText)
                             .keyboardType(.decimalPad)
@@ -114,14 +136,23 @@ struct AddExpenseView: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .disabled(!amountIsValid)
+                    Button("Save") {
+                        Task { await save() }
+                    }
+                    .disabled(!amountIsValid || isSaving)
                 }
             }
             .onAppear {
+                entryCurrencyCode = currencyCode
                 if let entry = existingEntry {
                     date = entry.date
-                    amountText = String(format: "%.2f", entry.amount).replacingOccurrences(of: ".", with: decimalSeparator())
+                    let formAmount = entry.originalAmount ?? entry.amount
+                    amountText = String(format: "%.2f", formAmount).replacingOccurrences(of: ".", with: decimalSeparator())
+                    entryCurrencyCode = entry.originalCurrencyCode ?? entry.currencyCode ?? currencyCode
+                    originalAmount = entry.originalAmount
+                    originalCurrencyCode = entry.originalCurrencyCode
+                    exchangeRateToEntryCurrency = entry.exchangeRateToEntryCurrency
+                    exchangeRateDate = entry.exchangeRateDate
                     category = entry.category
                     paymentMethod = entry.paymentMethod
                     note = entry.note
@@ -304,8 +335,10 @@ struct AddExpenseView: View {
         let amount = sanitizedAmount
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
-        formatter.currencyCode = currencyCode
-        return formatter.string(from: NSNumber(value: amount)) ?? "$\(String(format: "%.2f", amount))"
+        formatter.currencyCode = selectedCurrencyCode
+        let entered = formatter.string(from: NSNumber(value: amount)) ?? "\(String(format: "%.2f", amount)) \(selectedCurrencyCode)"
+        guard selectedCurrencyCode != currencyCode else { return entered }
+        return "\(entered) → saved in \(currencyCode)"
     }
 
     private func decimalSeparator() -> String {
@@ -357,13 +390,39 @@ struct AddExpenseView: View {
         }
     }
 
-    private func save() {
+    @MainActor
+    private func save() async {
         let amount = sanitizedAmount
         guard amount > 0 else { return }
 
+        isSaving = true
+        scanError = nil
+
+        let conversion: CurrencyConversionResult
+        do {
+            conversion = try await CurrencyConversionService().convert(
+                amount: amount,
+                from: selectedCurrencyCode,
+                to: currencyCode
+            )
+        } catch {
+            scanError = error.localizedDescription
+            isSaving = false
+            return
+        }
+        let storedOriginalAmount = originalAmount ?? conversion.originalAmount
+        let storedOriginalCurrency = originalCurrencyCode ?? conversion.originalCurrency ?? selectedCurrencyCode
+        let storedExchangeRate = exchangeRateToEntryCurrency ?? conversion.exchangeRate
+        let storedExchangeDate = exchangeRateDate ?? conversion.rateDate
+
         if let entry = existingEntry {
             entry.date = date
-            entry.amount = amount
+            entry.amount = conversion.convertedAmount
+            entry.currencyCode = conversion.targetCurrency
+            entry.originalAmount = storedOriginalAmount
+            entry.originalCurrencyCode = storedOriginalCurrency
+            entry.exchangeRateToEntryCurrency = storedExchangeRate
+            entry.exchangeRateDate = storedExchangeDate
             entry.category = category
             entry.paymentMethod = paymentMethod
             entry.note = note
@@ -371,7 +430,12 @@ struct AddExpenseView: View {
         } else {
             let entry = ExpenseEntry(
                 date: date,
-                amount: amount,
+                amount: conversion.convertedAmount,
+                currencyCode: conversion.targetCurrency,
+                originalAmount: storedOriginalAmount,
+                originalCurrencyCode: storedOriginalCurrency,
+                exchangeRateToEntryCurrency: storedExchangeRate,
+                exchangeRateDate: storedExchangeDate,
                 category: category,
                 paymentMethod: paymentMethod,
                 note: note,
@@ -381,6 +445,7 @@ struct AddExpenseView: View {
         }
 
         try? modelContext.save()
+        isSaving = false
         onSave?()
         dismiss()
     }
@@ -420,6 +485,9 @@ struct AddExpenseView: View {
         let targetCurrency = settings.currencyCode
 
         var drafts: [ReceiptExpenseDraft] = []
+        var failedImages: [Data] = []
+        var failureMessages: [String] = []
+        var savedCount = 0
         for (idx, imageData) in receiptImages.enumerated() {
             do {
                 let result = try await scanner.scanReceipt(
@@ -434,34 +502,44 @@ struct AddExpenseView: View {
                     converter: converter,
                     existingNote: note
                 )
-                drafts.append(draft)
+                if !isEditing && receiptImages.count > 1 {
+                    await MainActor.run {
+                        modelContext.insert(expenseEntry(from: draft))
+                        try? modelContext.save()
+                    }
+                    savedCount += 1
+                } else {
+                    drafts.append(draft)
+                }
                 scannedCount = idx + 1
             } catch {
-                isScanning = false
-                scanError = "Photo \(idx + 1): \(error.localizedDescription)"
-                scannedCount = idx
-                return
+                if !isEditing && receiptImages.count > 1 {
+                    failedImages.append(imageData)
+                    failureMessages.append("Photo \(idx + 1): \(error.localizedDescription)")
+                    scannedCount = idx + 1
+                    continue
+                } else {
+                    isScanning = false
+                    scanError = "Photo \(idx + 1): \(error.localizedDescription)"
+                    scannedCount = idx
+                    return
+                }
             }
         }
 
         await MainActor.run {
-            if !isEditing && drafts.count > 1 {
-                for draft in drafts {
-                    let entry = ExpenseEntry(
-                        date: draft.date,
-                        amount: draft.amount,
-                        category: draft.category,
-                        paymentMethod: draft.paymentMethod,
-                        note: draft.note,
-                        receiptImageData: draft.receiptImageData
-                    )
-                    modelContext.insert(entry)
-                }
-                try? modelContext.save()
+            if !isEditing && receiptImages.count > 1 {
                 isScanning = false
-                scanError = nil
                 onSave?()
-                dismiss()
+                if failureMessages.isEmpty {
+                    scanError = nil
+                    dismiss()
+                } else {
+                    receiptImages = failedImages
+                    selectedPhotos = []
+                    scannedCount = 0
+                    scanError = "Added \(savedCount) of \(savedCount + failureMessages.count) receipts.\n" + failureMessages.joined(separator: "\n")
+                }
                 return
             }
 
@@ -472,6 +550,11 @@ struct AddExpenseView: View {
             }
 
             amountText = String(format: "%.2f", draft.amount).replacingOccurrences(of: ".", with: decimalSeparator())
+            entryCurrencyCode = draft.currencyCode
+            originalAmount = draft.originalAmount
+            originalCurrencyCode = draft.originalCurrencyCode
+            exchangeRateToEntryCurrency = draft.exchangeRateToEntryCurrency
+            exchangeRateDate = draft.exchangeRateDate
             date = draft.date
             category = draft.category
             paymentMethod = draft.paymentMethod
@@ -505,10 +588,31 @@ struct AddExpenseView: View {
         return ReceiptExpenseDraft(
             date: receiptDate(from: extraction.date),
             amount: conversion.convertedAmount,
+            currencyCode: conversion.targetCurrency,
+            originalAmount: conversion.originalAmount,
+            originalCurrencyCode: conversion.originalCurrency ?? targetCurrency,
+            exchangeRateToEntryCurrency: conversion.exchangeRate,
+            exchangeRateDate: conversion.rateDate,
             category: normalizedExpenseCategory(extraction.category ?? ""),
             paymentMethod: normalizedPaymentMethod(extraction.paymentMethod),
             note: receiptNote(existingNote: existingNote, extraction: extraction, conversion: conversion),
             receiptImageData: imageData
+        )
+    }
+
+    private func expenseEntry(from draft: ReceiptExpenseDraft) -> ExpenseEntry {
+        ExpenseEntry(
+            date: draft.date,
+            amount: draft.amount,
+            currencyCode: draft.currencyCode,
+            originalAmount: draft.originalAmount,
+            originalCurrencyCode: draft.originalCurrencyCode,
+            exchangeRateToEntryCurrency: draft.exchangeRateToEntryCurrency,
+            exchangeRateDate: draft.exchangeRateDate,
+            category: draft.category,
+            paymentMethod: draft.paymentMethod,
+            note: draft.note,
+            receiptImageData: draft.receiptImageData
         )
     }
 

@@ -119,11 +119,11 @@ final class TodayViewModel {
             sortBy: [SortDescriptor(\.date)]
         )
         let allSessions = (try? modelContext.fetch(sessionDescriptor)) ?? []
-        calculateMonthlyEarnings(entries: allIncome, sessions: allSessions)
 
         let settings = UserSettings.current(in: modelContext)
         monthlyGoal = settings.monthlyIncomeGoal
         currencyCode = settings.currencyCode
+        await calculateMonthlyEarnings(entries: allIncome, sessions: allSessions, targetCurrency: settings.currencyCode)
 
         detectFreeDay(calendar: calendar, startOfDay: startOfDay, endOfDay: endOfDay)
         findCurrentEvent()
@@ -131,7 +131,13 @@ final class TodayViewModel {
         isLoading = false
     }
 
-    func refreshSuggestions(modelContext: ModelContext, weather: WeatherSnapshot?, location: Coordinate?, settings: UserSettings) async {
+    func refreshSuggestions(
+        modelContext: ModelContext,
+        weather: WeatherSnapshot?,
+        location: Coordinate?,
+        settings: UserSettings,
+        customPreferences: String = ""
+    ) async {
         guard let _ = location else {
             await MainActor.run {
                 suggestionError = "Suggestions need location access. Enable location in Settings."
@@ -164,7 +170,20 @@ final class TodayViewModel {
         nearbyPlaces = placesService.results
 
         let dateStr = DateUtils.formattedDayAndDate(Date())
-        let preferences: [String] = []
+        var preferences = (settings.selectedActivities ?? "")
+            .split(separator: ",")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if let energy = settings.energyLevel {
+            preferences.append("energy level \(Int(energy)) of 5")
+        }
+        if let budget = settings.budgetPreference, !budget.isEmpty {
+            preferences.append("\(budget) budget")
+        }
+        let trimmedCustomPreferences = customPreferences.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedCustomPreferences.isEmpty {
+            preferences.append("custom request: \(trimmedCustomPreferences)")
+        }
         let prompt = PromptBuilder.buildSmartSuggestionPrompt(
             date: dateStr,
             freeWindows: freeWindows,
@@ -292,7 +311,7 @@ final class TodayViewModel {
 
         let totalFreeSeconds = activeGaps.reduce(0.0) { $0 + $1.duration }
         let totalActiveSeconds = activeEnd.timeIntervalSince(activeStart)
-        let freeRatio = totalActiveSeconds / totalActiveSeconds
+        let freeRatio = totalActiveSeconds > 0 ? totalFreeSeconds / totalActiveSeconds : 0
 
         freeWindows = activeGaps
         isFreeDay = freeRatio >= 0.5
@@ -312,21 +331,33 @@ final class TodayViewModel {
             .min(by: { $0.startDate < $1.startDate })
     }
 
-    private func calculateMonthlyEarnings(entries: [IncomeEntry], sessions: [WorkSession]) {
+    private func calculateMonthlyEarnings(entries: [IncomeEntry], sessions: [WorkSession], targetCurrency: String) async {
         let calendar = Calendar.current
         guard let monthStart = calendar.dateInterval(of: .month, for: Date())?.start else {
             monthlyEarnings = 0
             return
         }
 
-        let entryTotal = entries
-            .filter { $0.date >= monthStart }
-            .reduce(0.0) { $0 + $1.amount }
+        let converter = CurrencyConversionService()
+        var entryTotal = 0.0
+        for entry in entries where entry.date >= monthStart {
+            entryTotal += await convertedAmount(entry.amount, from: entry.currencyCode, to: targetCurrency, converter: converter)
+        }
 
-        let sessionTotal = sessions
-            .filter { $0.date >= monthStart }
-            .reduce(0.0) { $0 + $1.totalEarned }
+        var sessionTotal = 0.0
+        for session in sessions where session.date >= monthStart {
+            sessionTotal += await convertedAmount(session.totalEarned, from: session.currencyCode, to: targetCurrency, converter: converter)
+        }
 
         monthlyEarnings = entryTotal + sessionTotal
+    }
+
+    private func convertedAmount(_ amount: Double, from sourceCurrency: String?, to targetCurrency: String, converter: CurrencyConversionService) async -> Double {
+        let source = converter.normalizedCurrencyCode(sourceCurrency) ?? targetCurrency
+        guard source != targetCurrency else { return amount }
+        guard let result = try? await converter.convert(amount: amount, from: source, to: targetCurrency) else {
+            return amount
+        }
+        return result.convertedAmount
     }
 }

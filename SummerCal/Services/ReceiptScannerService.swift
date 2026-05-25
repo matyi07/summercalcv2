@@ -50,10 +50,26 @@ final class ReceiptScannerService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 30
+        request.timeoutInterval = payload.usesImageInput ? 75 : 60
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            if let fallback = heuristicExtraction(from: payload.fallbackText), fallback.total != nil {
+                return fallback
+            }
+            if (error as? URLError)?.code == .timedOut {
+                throw NSError(
+                    domain: "ReceiptScanner",
+                    code: URLError.timedOut.rawValue,
+                    userInfo: [NSLocalizedDescriptionKey: "Receipt scan timed out. Try a clearer cropped receipt photo, or retry when the AI provider is responding faster."]
+                )
+            }
+            throw error
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "ReceiptScanner", code: 500, userInfo: [NSLocalizedDescriptionKey: "No response from server"])
@@ -95,29 +111,38 @@ final class ReceiptScannerService {
             "content": "You extract receipt data. Return only one valid JSON object and no prose."
         ]
 
+        let recognizedText = try? await recognizeText(from: imageData)
+
         guard supportsImageInput(provider: provider, model: model) else {
-            let recognizedText = try await recognizeText(from: imageData)
+            guard let recognizedText, !recognizedText.isEmpty else {
+                throw NSError(
+                    domain: "ReceiptScanner",
+                    code: 422,
+                    userInfo: [NSLocalizedDescriptionKey: "Could not read text from this receipt photo. Try a clearer, well-lit photo or use an image-capable AI provider."]
+                )
+            }
             let messages: [[String: Any]] = [
                 systemMessage,
                 [
                     "role": "user",
-                    "content": receiptExtractionPrompt(inputDescription: "the OCR text below") + "\n\nOCR text:\n\(recognizedText)"
+                    "content": receiptExtractionPrompt(inputDescription: "the OCR text below") + "\n\nOCR text:\n\(String(recognizedText.prefix(6000)))"
                 ]
             ]
             return ReceiptScanRequestPayload(messages: messages, fallbackText: recognizedText, usesImageInput: false)
         }
 
+        let textHint = recognizedText.map { "\n\nOCR text detected locally. Use it as a backup if the image is unclear:\n\(String($0.prefix(4000)))" } ?? ""
         let messages: [[String: Any]] = [
             systemMessage,
             [
                 "role": "user",
                 "content": [
-                    ["type": "text", "text": prompt],
-                    ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(imageData.base64EncodedString())", "detail": "high"]]
+                    ["type": "text", "text": prompt + textHint],
+                    ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(imageData.base64EncodedString())", "detail": "low"]]
                 ]
             ]
         ]
-        return ReceiptScanRequestPayload(messages: messages, fallbackText: nil, usesImageInput: true)
+        return ReceiptScanRequestPayload(messages: messages, fallbackText: recognizedText, usesImageInput: true)
     }
 
     private func receiptExtractionPrompt(inputDescription: String) -> String {

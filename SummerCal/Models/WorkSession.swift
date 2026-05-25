@@ -9,6 +9,7 @@ final class WorkSession {
     var endTime: Date
     var hourlyRate: Double
     var totalEarned: Double
+    var currencyCode: String?
     var descriptionText: String
     var createdAt: Date
 
@@ -19,6 +20,7 @@ final class WorkSession {
         endTime: Date,
         hourlyRate: Double,
         totalEarned: Double = 0,
+        currencyCode: String? = nil,
         descriptionText: String = "",
         createdAt: Date = Date()
     ) {
@@ -28,6 +30,7 @@ final class WorkSession {
         self.endTime = endTime
         self.hourlyRate = hourlyRate
         self.totalEarned = totalEarned
+        self.currencyCode = currencyCode
         self.descriptionText = descriptionText
         self.createdAt = createdAt
     }

@@ -13,6 +13,7 @@ struct TodayView: View {
     @State private var weatherFetched = false
     @State private var lastWeatherFetch: Date = .distantPast
     @State private var selectedSuggestion: ActivitySuggestion?
+    @State private var suggestionPreferenceText: String = ""
 
     @Query(sort: \CalendarEvent.startDate) private var allEvents: [CalendarEvent]
     @Query(sort: \ActivitySuggestion.date) private var allSuggestions: [ActivitySuggestion]
@@ -349,11 +350,21 @@ struct TodayView: View {
                 Spacer()
             }
 
+            TextField("Suggestion preferences (optional)", text: $suggestionPreferenceText, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(1...3)
+
             Button {
                 Task {
                     viewModel.isLoadingSuggestions = true
                     viewModel.suggestionError = nil
-                    await viewModel.refreshSuggestions(modelContext: modelContext, weather: viewModel.weather, location: locationService.currentCoordinate, settings: UserSettings.current(in: modelContext))
+                    await viewModel.refreshSuggestions(
+                        modelContext: modelContext,
+                        weather: viewModel.weather,
+                        location: locationService.currentCoordinate,
+                        settings: UserSettings.current(in: modelContext),
+                        customPreferences: suggestionPreferenceText
+                    )
                     viewModel.isLoadingSuggestions = false
                 }
             } label: {

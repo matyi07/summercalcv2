@@ -70,6 +70,11 @@ final class SettingsViewModel {
     }
 
     private func applyToSettings(_ s: UserSettings, modelContext: ModelContext) {
+        let previousCurrency = s.currencyCode
+        if previousCurrency != currencyCode {
+            backfillMissingMoneyCurrencies(previousCurrency: previousCurrency, modelContext: modelContext)
+        }
+
         s.aiProviderKind = aiProviderKind
         s.aiModelName = aiModelName
         s.aiBaseURL = aiBaseURL.isEmpty ? nil : aiBaseURL
@@ -88,6 +93,27 @@ final class SettingsViewModel {
         }
 
         try? modelContext.save()
+    }
+
+    private func backfillMissingMoneyCurrencies(previousCurrency: String, modelContext: ModelContext) {
+        let incomeEntries = (try? modelContext.fetch(FetchDescriptor<IncomeEntry>())) ?? []
+        for entry in incomeEntries where entry.currencyCode == nil {
+            entry.currencyCode = previousCurrency
+            entry.originalAmount = entry.originalAmount ?? entry.amount
+            entry.originalCurrencyCode = entry.originalCurrencyCode ?? previousCurrency
+        }
+
+        let expenseEntries = (try? modelContext.fetch(FetchDescriptor<ExpenseEntry>())) ?? []
+        for entry in expenseEntries where entry.currencyCode == nil {
+            entry.currencyCode = previousCurrency
+            entry.originalAmount = entry.originalAmount ?? entry.amount
+            entry.originalCurrencyCode = entry.originalCurrencyCode ?? previousCurrency
+        }
+
+        let workSessions = (try? modelContext.fetch(FetchDescriptor<WorkSession>())) ?? []
+        for session in workSessions where session.currencyCode == nil {
+            session.currencyCode = previousCurrency
+        }
     }
 
     func testConnection() async {

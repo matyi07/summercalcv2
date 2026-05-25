@@ -182,8 +182,7 @@ final class SmartNotificationViewModel {
                 loadAll(modelContext: modelContext)
                 return
             }
-            let service = SmartNotificationService()
-            await service.runDailyPipeline(for: Date(), modelContext: modelContext)
+            await NotificationBootstrapService().refresh(modelContext: modelContext)
         } catch {
             scheduleError = error.localizedDescription
         }

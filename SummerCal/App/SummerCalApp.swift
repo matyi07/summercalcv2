@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UserNotifications
 
 @main
 struct SummerCalApp: App {
@@ -45,18 +44,7 @@ struct SummerCalApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(appRouter)
-                .task {
-                    await requestNotificationPermissionIfNeeded()
-                }
         }
         .modelContainer(modelContainer)
-    }
-
-    private func requestNotificationPermissionIfNeeded() async {
-        let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
-        if settings.authorizationStatus == .notDetermined {
-            _ = try? await center.requestAuthorization(options: [.alert, .badge, .sound])
-        }
     }
 }

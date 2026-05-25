@@ -60,6 +60,7 @@ struct ContentView: View {
         }
         .task {
             locationService.requestWhenInUsePermission()
+            await NotificationBootstrapService().refresh(modelContext: modelContext)
         }
         .task(priority: .background) {
             GMSServices.provideAPIKey(GoogleAPI.defaultKey)

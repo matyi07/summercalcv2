@@ -143,26 +143,33 @@ struct MoneyView: View {
             }
         }
         .onAppear {
-            viewModel.loadSettings(modelContext: modelContext)
-            viewModel.loadEntries(modelContext: modelContext)
+            reloadMoney()
         }
         .onChange(of: viewModel.selectedMonth) { _, _ in
-            viewModel.loadEntries(modelContext: modelContext)
+            reloadMoney()
         }
         .sheet(isPresented: $showAddIncome) {
             AddIncomeView(existingEntry: editIncome) {
-                viewModel.loadEntries(modelContext: modelContext)
+                reloadMoney()
             }
         }
         .sheet(isPresented: $showAddExpense) {
             AddExpenseView(existingEntry: editExpense) {
-                viewModel.loadEntries(modelContext: modelContext)
+                reloadMoney()
             }
         }
         .sheet(isPresented: $showAddWork) {
             AddWorkSessionView(existingSession: editSession) {
-                viewModel.loadEntries(modelContext: modelContext)
+                reloadMoney()
             }
+        }
+    }
+
+    private func reloadMoney() {
+        viewModel.loadSettings(modelContext: modelContext)
+        viewModel.loadEntries(modelContext: modelContext)
+        Task {
+            await viewModel.refreshCurrencyConversions()
         }
     }
 
@@ -207,6 +214,13 @@ struct MoneyView: View {
                             .foregroundStyle(viewModel.netBalance >= 0 ? Color.green.gradient : Color.red.gradient)
                     }
                     Spacer()
+                }
+
+                if let error = viewModel.currencyConversionError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 Divider()
@@ -308,10 +322,15 @@ struct MoneyView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(viewModel.formatCurrency(entry.amount))
+                Text(viewModel.formatCurrency(viewModel.displayAmount(for: entry)))
                     .font(.body)
                     .fontWeight(.semibold)
                     .foregroundColor(.green)
+                if let source = viewModel.sourceCurrencyLabel(for: entry) {
+                    Text(source)
+                        .font(.caption2)
+                        .foregroundStyle(Color(.systemGray))
+                }
                 Image(systemName: "chevron.right")
                     .font(.caption2)
                     .foregroundStyle(Color(.systemGray3))
@@ -354,10 +373,15 @@ struct MoneyView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(viewModel.formatCurrency(entry.amount))
+                Text(viewModel.formatCurrency(viewModel.displayAmount(for: entry)))
                     .font(.body)
                     .fontWeight(.semibold)
                     .foregroundColor(.red)
+                if let source = viewModel.sourceCurrencyLabel(for: entry) {
+                    Text(source)
+                        .font(.caption2)
+                        .foregroundStyle(Color(.systemGray))
+                }
                 Image(systemName: "chevron.right")
                     .font(.caption2)
                     .foregroundStyle(Color(.systemGray3))
@@ -382,7 +406,7 @@ struct MoneyView: View {
                 HStack(spacing: 4) {
                     Text(viewModel.formatDuration(session))
                         .font(.caption)
-                    Text("at \(viewModel.formatCurrency(session.hourlyRate))/h")
+                    Text("at \(viewModel.formatCurrency(session.hourlyRate, currency: session.currencyCode ?? viewModel.currencyCode))/h")
                         .font(.caption)
                         .foregroundStyle(Color(.systemGray))
                 }
@@ -400,7 +424,7 @@ struct MoneyView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(viewModel.formatCurrency(session.totalEarned))
+                Text(viewModel.formatCurrency(viewModel.displayAmount(for: session)))
                     .font(.body)
                     .fontWeight(.semibold)
                     .foregroundColor(.blue)

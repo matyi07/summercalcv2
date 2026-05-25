@@ -36,6 +36,8 @@ final class CurrencyConversionService {
         let rate: Double
     }
 
+    private var rateCache: [String: RateResponse] = [:]
+
     func convert(amount: Double, from sourceCurrency: String?, to targetCurrency: String) async throws -> CurrencyConversionResult {
         let target = try normalizedCurrency(targetCurrency)
         guard let sourceCurrency else {
@@ -61,6 +63,18 @@ final class CurrencyConversionService {
             )
         }
 
+        let cacheKey = "\(source)_\(target)"
+        if let cached = rateCache[cacheKey], cached.rate > 0 {
+            return CurrencyConversionResult(
+                originalAmount: amount,
+                originalCurrency: source,
+                convertedAmount: amount * cached.rate,
+                targetCurrency: target,
+                exchangeRate: cached.rate,
+                rateDate: cached.date
+            )
+        }
+
         guard let url = URL(string: "https://api.frankfurter.dev/v2/rate/\(source)/\(target)") else {
             throw CurrencyConversionError.unavailable(source, target)
         }
@@ -76,6 +90,7 @@ final class CurrencyConversionService {
             guard rateResponse.rate > 0 else {
                 throw CurrencyConversionError.unavailable(source, target)
             }
+            rateCache[cacheKey] = rateResponse
 
             return CurrencyConversionResult(
                 originalAmount: amount,
@@ -90,6 +105,11 @@ final class CurrencyConversionService {
         } catch {
             throw CurrencyConversionError.unavailable(source, target)
         }
+    }
+
+    func normalizedCurrencyCode(_ value: String?) -> String? {
+        guard let value else { return nil }
+        return try? normalizedCurrency(value)
     }
 
     private func normalizedCurrency(_ value: String) throws -> String {

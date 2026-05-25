@@ -111,6 +111,10 @@ struct AddWorkSessionView: View {
                     endTime = session.endTime
                     hourlyRateText = String(format: "%.2f", session.hourlyRate).replacingOccurrences(of: ".", with: decimalSeparator())
                     note = session.descriptionText
+                    if session.currencyCode == nil {
+                        session.currencyCode = currencyCode
+                        try? modelContext.save()
+                    }
                 }
             }
         }
@@ -146,6 +150,7 @@ struct AddWorkSessionView: View {
             session.endTime = endTime
             session.hourlyRate = hourlyRate
             session.totalEarned = earned
+            session.currencyCode = session.currencyCode ?? currencyCode
             session.descriptionText = note
         } else {
             let session = WorkSession(
@@ -154,6 +159,7 @@ struct AddWorkSessionView: View {
                 endTime: endTime,
                 hourlyRate: hourlyRate,
                 totalEarned: earned,
+                currencyCode: currencyCode,
                 descriptionText: note
             )
             modelContext.insert(session)

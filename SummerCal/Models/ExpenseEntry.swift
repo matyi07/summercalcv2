@@ -42,6 +42,11 @@ final class ExpenseEntry {
     @Attribute(.unique) var id: UUID
     var date: Date
     var amount: Double
+    var currencyCode: String?
+    var originalAmount: Double?
+    var originalCurrencyCode: String?
+    var exchangeRateToEntryCurrency: Double?
+    var exchangeRateDate: String?
     var category: ExpenseCategory
     var paymentMethod: String
     var note: String
@@ -52,6 +57,11 @@ final class ExpenseEntry {
         id: UUID = UUID(),
         date: Date,
         amount: Double,
+        currencyCode: String? = nil,
+        originalAmount: Double? = nil,
+        originalCurrencyCode: String? = nil,
+        exchangeRateToEntryCurrency: Double? = nil,
+        exchangeRateDate: String? = nil,
         category: ExpenseCategory = .other,
         paymentMethod: String = "card",
         note: String = "",
@@ -61,6 +71,11 @@ final class ExpenseEntry {
         self.id = id
         self.date = date
         self.amount = amount
+        self.currencyCode = currencyCode
+        self.originalAmount = originalAmount
+        self.originalCurrencyCode = originalCurrencyCode
+        self.exchangeRateToEntryCurrency = exchangeRateToEntryCurrency
+        self.exchangeRateDate = exchangeRateDate
         self.category = category
         self.paymentMethod = paymentMethod
         self.note = note
