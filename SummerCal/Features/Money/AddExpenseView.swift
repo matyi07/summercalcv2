@@ -14,8 +14,14 @@ private struct ReceiptExpenseDraft {
     let exchangeRateDate: String?
     let category: ExpenseCategory
     let paymentMethod: String
+    let storeName: String?
     let note: String
     let receiptImageData: Data
+}
+
+private struct ReceiptImagePreview: Identifiable {
+    let id = UUID()
+    let data: Data
 }
 
 struct AddExpenseView: View {
@@ -44,6 +50,8 @@ struct AddExpenseView: View {
     @State private var showCamera: Bool = false
     @State private var capturedUIImage: UIImage?
     @State private var didAutoOpenCamera: Bool = false
+    @State private var storeName: String = ""
+    @State private var receiptPreview: ReceiptImagePreview?
 
     var onSave: (() -> Void)?
     var onSavedExpense: ((ExpenseEntry) -> Void)?
@@ -109,6 +117,8 @@ struct AddExpenseView: View {
                             }
                     }
 
+                    TextField("Store Name", text: $storeName)
+
                     Picker("Category", selection: $category) {
                         ForEach(ExpenseCategory.allCases, id: \.self) { cat in
                             Label(cat.label, systemImage: cat.icon)
@@ -170,6 +180,7 @@ struct AddExpenseView: View {
                     exchangeRateDate = entry.exchangeRateDate
                     category = entry.category
                     paymentMethod = entry.paymentMethod
+                    storeName = entry.storeName ?? storeNameFromNote(entry.note)
                     note = entry.note
                     if let img = entry.receiptImageData {
                         receiptImages = [img]
@@ -205,6 +216,9 @@ struct AddExpenseView: View {
                 )
                 .ignoresSafeArea()
             }
+            .sheet(item: $receiptPreview) { preview in
+                receiptPreviewView(preview.data)
+            }
         }
     }
 
@@ -216,11 +230,24 @@ struct AddExpenseView: View {
                         ForEach(Array(receiptImages.enumerated()), id: \.offset) { idx, data in
                             if let uiImage = UIImage(data: data) {
                                 ZStack(alignment: .topTrailing) {
-                                    Image(uiImage: uiImage)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 100, height: 100)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    Button {
+                                        receiptPreview = ReceiptImagePreview(data: data)
+                                    } label: {
+                                        ZStack(alignment: .bottomTrailing) {
+                                            Image(uiImage: uiImage)
+                                                .resizable()
+                                                .scaledToFill()
+                                                .frame(width: 100, height: 100)
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                                .font(.caption2)
+                                                .foregroundColor(.white)
+                                                .padding(5)
+                                                .background(Circle().fill(Color.black.opacity(0.6)))
+                                                .padding(4)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
 
                                     Button {
                                         guard receiptImages.indices.contains(idx) else { return }
@@ -310,6 +337,34 @@ struct AddExpenseView: View {
             }
         } header: {
             Text("Receipt")
+        }
+    }
+
+    private func receiptPreviewView(_ data: Data) -> some View {
+        NavigationStack {
+            ZStack {
+                Color(.systemBackground).ignoresSafeArea()
+                if let uiImage = UIImage(data: data) {
+                    ScrollView([.horizontal, .vertical]) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFit()
+                            .padding()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                } else {
+                    ContentUnavailableView("Could not load receipt", systemImage: "photo")
+                }
+            }
+            .navigationTitle("Receipt")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        receiptPreview = nil
+                    }
+                }
+            }
         }
     }
 
@@ -446,6 +501,7 @@ struct AddExpenseView: View {
             entry.exchangeRateDate = storedExchangeDate
             entry.category = category
             entry.paymentMethod = paymentMethod
+            entry.storeName = cleanedStoreName()
             entry.note = note
             entry.receiptImageData = receiptImages.first
             savedEntry = entry
@@ -460,6 +516,7 @@ struct AddExpenseView: View {
                 exchangeRateDate: storedExchangeDate,
                 category: category,
                 paymentMethod: paymentMethod,
+                storeName: cleanedStoreName(),
                 note: note,
                 receiptImageData: receiptImages.first
             )
@@ -600,6 +657,7 @@ struct AddExpenseView: View {
             date = draft.date
             category = draft.category
             paymentMethod = draft.paymentMethod
+            storeName = draft.storeName ?? ""
             note = draft.note
             isScanning = false
             scanError = nil
@@ -637,6 +695,7 @@ struct AddExpenseView: View {
             exchangeRateDate: conversion.rateDate,
             category: normalizedExpenseCategory(extraction.category ?? ""),
             paymentMethod: normalizedPaymentMethod(extraction.paymentMethod),
+            storeName: cleanedStoreName(extraction.merchantName),
             note: receiptNote(existingNote: existingNote, extraction: extraction, conversion: conversion),
             receiptImageData: imageData
         )
@@ -653,6 +712,7 @@ struct AddExpenseView: View {
             exchangeRateDate: draft.exchangeRateDate,
             category: draft.category,
             paymentMethod: draft.paymentMethod,
+            storeName: draft.storeName,
             note: draft.note,
             receiptImageData: draft.receiptImageData
         )
@@ -767,6 +827,27 @@ struct AddExpenseView: View {
         lines.append(contentsOf: customLines)
 
         return lines.joined(separator: "\n")
+    }
+
+    private func cleanedStoreName() -> String? {
+        cleanedStoreName(storeName)
+    }
+
+    private func cleanedStoreName(_ value: String?) -> String? {
+        guard let source = value else { return nil }
+        let cleaned = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return nil }
+        return cleaned
+    }
+
+    private func storeNameFromNote(_ note: String) -> String {
+        for line in note.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.lowercased().hasPrefix("store:") {
+                return String(trimmed.dropFirst("Store:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        return ""
     }
 
     private func formattedAmount(_ amount: Double, currency: String) -> String {

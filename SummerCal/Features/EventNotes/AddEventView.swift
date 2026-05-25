@@ -67,16 +67,22 @@ struct AddEventView: View {
                 }
 
                 Section("Time") {
-                    Toggle("All Day", isOn: $isAllDay)
+                    if isWorkEvent {
+                        Label("Set the full work start and end in the Work Type section.", systemImage: "briefcase")
+                            .font(.caption)
+                            .foregroundStyle(Color(.systemGray))
+                    } else {
+                        Toggle("All Day", isOn: $isAllDay)
 
-                    startDatePicker
+                        startDatePicker
 
-                    DatePicker("Ends", selection: $endDate, in: startDate..., displayedComponents: isAllDay ? [.date] : [.date, .hourAndMinute])
-                        .onChange(of: startDate) { _, newStart in
-                            if endDate < newStart {
-                                endDate = newStart.addingTimeInterval(3600)
+                        DatePicker("Ends", selection: $endDate, in: startDate..., displayedComponents: isAllDay ? [.date] : [.date, .hourAndMinute])
+                            .onChange(of: startDate) { _, newStart in
+                                if endDate < newStart {
+                                    endDate = newStart.addingTimeInterval(3600)
+                                }
                             }
-                        }
+                    }
                 }
 
                 Section("Details") {
@@ -84,6 +90,17 @@ struct AddEventView: View {
                         ForEach(categories, id: \.self) { cat in
                             Label(cat.capitalized, systemImage: iconForCategory(cat))
                                 .tag(cat)
+                        }
+                    }
+                    .onChange(of: category) { _, newCategory in
+                        if newCategory == "work" {
+                            isAllDay = false
+                            if workCurrencyCode.isEmpty {
+                                workCurrencyCode = defaultCurrency
+                            }
+                            if endDate < startDate {
+                                endDate = startDate.addingTimeInterval(3600)
+                            }
                         }
                     }
 
@@ -99,7 +116,10 @@ struct AddEventView: View {
                         rateText: $workRateText,
                         pricingMode: $workPricingMode,
                         currencyCode: $workCurrencyCode,
-                        defaultCurrency: defaultCurrency
+                        defaultCurrency: defaultCurrency,
+                        scheduleStartDate: $startDate,
+                        scheduleEndDate: $endDate,
+                        showsScheduleFields: true
                     )
                 }
 
@@ -286,6 +306,9 @@ struct AddEventView: View {
         let sanitizedCustomReminder = hasCustomReminderDate ? min(customReminderDate, startDate) : nil
         let cleanedWorkTypeName = workTypeName.trimmingCharacters(in: .whitespacesAndNewlines)
         let shouldCreateWorkSession = isWorkEvent && !cleanedWorkTypeName.isEmpty && workRateAmount > 0
+        if shouldCreateWorkSession {
+            upsertWorkType(named: cleanedWorkTypeName)
+        }
 
         if let event = existingEvent {
             event.title = title
@@ -388,6 +411,36 @@ struct AddEventView: View {
         event.workRateAmount = workRateAmount
         event.workPricingMode = workPricingMode
         event.workCurrencyCode = workCurrencyCode.isEmpty ? defaultCurrency : workCurrencyCode
+    }
+
+    private func upsertWorkType(named cleanedName: String) {
+        let types = (try? modelContext.fetch(FetchDescriptor<WorkType>())) ?? []
+        let targetCurrency = workCurrencyCode.isEmpty ? defaultCurrency : workCurrencyCode
+        let selectedType = selectedWorkTypeId.flatMap { id in types.first(where: { $0.id == id }) }
+        let matchingType = types.first { $0.name.caseInsensitiveCompare(cleanedName) == .orderedSame }
+        let type = selectedType ?? matchingType
+
+        if let type {
+            type.name = cleanedName
+            type.rateAmount = workRateAmount
+            type.pricingMode = workPricingMode
+            type.currencyCode = targetCurrency
+            type.defaultStartDate = startDate
+            type.defaultEndDate = endDate
+            type.updatedAt = Date()
+            selectedWorkTypeId = type.id
+        } else {
+            let type = WorkType(
+                name: cleanedName,
+                rateAmount: workRateAmount,
+                pricingMode: workPricingMode,
+                currencyCode: targetCurrency,
+                defaultStartDate: startDate,
+                defaultEndDate: endDate
+            )
+            modelContext.insert(type)
+            selectedWorkTypeId = type.id
+        }
     }
 
     private func syncWorkSession(for event: CalendarEvent, shouldCreate: Bool) {

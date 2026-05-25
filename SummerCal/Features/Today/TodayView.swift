@@ -15,6 +15,7 @@ struct TodayView: View {
     @State private var selectedSuggestion: ActivitySuggestion?
     @State private var suggestionPreferenceText: String = ""
     @State private var showAllSuggestions = false
+    @State private var showHourlyForecast = false
     @FocusState private var suggestionPreferenceFocused: Bool
 
     @Query(sort: \CalendarEvent.startDate) private var allEvents: [CalendarEvent]
@@ -41,7 +42,7 @@ struct TodayView: View {
                     nextEventCard(next)
                 }
                 if !viewModel.hourlyForecast.isEmpty {
-                    hourlyForecastSection
+                    hourlyForecastDropdown
                 }
                 if !viewModel.todaysEvents.isEmpty {
                     todaysEventsSection
@@ -298,11 +299,8 @@ struct TodayView: View {
         }
     }
 
-    private var hourlyForecastSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Hourly Forecast")
-                .font(.headline)
-
+    private var hourlyForecastDropdown: some View {
+        DisclosureGroup(isExpanded: $showHourlyForecast) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(Array(viewModel.hourlyForecast.prefix(12).enumerated()), id: \.element.id) { _, snap in
@@ -330,21 +328,21 @@ struct TodayView: View {
                         .padding(.horizontal, 10)
                         .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemGray6)))
                     }
-
-                    if viewModel.hourlyForecast.isEmpty {
-                        VStack(spacing: 8) {
-                            Image(systemName: "clock.badge.exclamationmark")
-                                .font(.title2)
-                                .foregroundColor(Color(.systemGray))
-                            Text("No hourly data available")
-                                .font(.caption)
-                                .foregroundStyle(Color(.systemGray))
-                        }
-                        .padding(20)
-                    }
                 }
+                .padding(.top, 8)
+            }
+        } label: {
+            HStack {
+                Label("Hourly Forecast", systemImage: "cloud.sun")
+                    .font(.headline)
+                Spacer()
+                Text("\(viewModel.hourlyForecast.count) updates")
+                    .font(.caption)
+                    .foregroundStyle(Color(.systemGray))
             }
         }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)).shadow(color: .black.opacity(0.05), radius: 4))
         .padding(.horizontal)
     }
 

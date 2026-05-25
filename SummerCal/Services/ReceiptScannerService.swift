@@ -151,6 +151,7 @@ final class ReceiptScannerService {
         Respond ONLY with a valid JSON object, no markdown or explanatory text. Use null for missing fields.
         total and tax must be JSON numbers without currency symbols. lineItems must be an array of strings.
         paymentMethod must be "cash", "card", "transfer", or "direct debit".
+        merchantName must be the business/store name, not the street address, city, terminal, or receipt location text.
         Hungarian payment labels: KÉSZPÉNZ means cash, BANKKÁRTYA means card.
         Categorize using: housing, utilities, food, transport, health, entertainment, shopping, subscription, travel, education, other.
 

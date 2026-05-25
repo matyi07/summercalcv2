@@ -128,6 +128,10 @@ struct MoneyView: View {
                 Text("Expenses")
             }
 
+            if !viewModel.storeExpenseGroups.isEmpty {
+                storeGroupingSection
+            }
+
             Section {
                 if viewModel.workSessions.isEmpty {
                     ContentUnavailableView(
@@ -585,6 +589,7 @@ struct MoneyView: View {
     }
 
     private func expenseRow(_ entry: ExpenseEntry) -> some View {
+        let storeName = cleanedStoreName(entry.storeName)
         HStack(spacing: 12) {
             Image(systemName: entry.category.icon)
                 .font(.title3)
@@ -593,10 +598,16 @@ struct MoneyView: View {
                 .foregroundColor(.red)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.category.label)
+                Text(storeName ?? entry.category.label)
                     .font(.body)
                     .fontWeight(.medium)
                     .lineLimit(1)
+                if storeName != nil {
+                    Text(entry.category.label)
+                        .font(.caption)
+                        .foregroundStyle(Color(.systemGray))
+                        .lineLimit(1)
+                }
                 if !entry.note.isEmpty {
                     Text(entry.note)
                         .font(.caption)
@@ -633,6 +644,36 @@ struct MoneyView: View {
         }
         .padding(.vertical, 2)
         .frame(minHeight: 44)
+    }
+
+    private var storeGroupingSection: some View {
+        Section {
+            ForEach(viewModel.storeExpenseGroups.prefix(8)) { group in
+                HStack(spacing: 12) {
+                    Image(systemName: "storefront")
+                        .font(.title3)
+                        .frame(width: 32, height: 32)
+                        .background(.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                        .foregroundColor(.red)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(group.name)
+                            .font(.body.weight(.medium))
+                            .lineLimit(1)
+                        Text("\(group.count) expense\(group.count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundStyle(Color(.systemGray))
+                    }
+                    Spacer()
+                    Text(viewModel.formatCurrency(group.total))
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(.red)
+                }
+            }
+        } header: {
+            Text("Stores")
+        } footer: {
+            Text("Grouped by store name from receipts or manual entry, not by location.")
+        }
     }
 
     private func workSessionRow(_ session: WorkSession) -> some View {
@@ -707,7 +748,7 @@ struct MoneyView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(goal.name)
                         .font(.body.weight(.medium))
-                    Text("\(viewModel.formatCurrency(viewModel.allocatedAmount(for: goal))) of \(viewModel.primarySavingsTargetText(for: goal))")
+                    Text("\(viewModel.formatCurrency(viewModel.primaryAllocatedAmount(for: goal), currency: goal.currencyCode ?? viewModel.currencyCode)) of \(viewModel.primarySavingsTargetText(for: goal))")
                         .font(.caption)
                         .foregroundStyle(Color(.systemGray))
                     if let secondary = viewModel.secondarySavingsTargetText(for: goal) {
@@ -727,8 +768,8 @@ struct MoneyView: View {
             ProgressView(value: progress)
                 .tint(.purple)
 
-            if viewModel.remainingAmount(for: goal) > 0 {
-                Text("\(viewModel.formatCurrency(viewModel.remainingAmount(for: goal))) still needed")
+            if viewModel.primaryRemainingAmount(for: goal) > 0 {
+                Text("\(viewModel.formatCurrency(viewModel.primaryRemainingAmount(for: goal), currency: goal.currencyCode ?? viewModel.currencyCode)) still needed")
                     .font(.caption2)
                     .foregroundStyle(Color(.systemGray))
             } else {
@@ -788,5 +829,11 @@ struct MoneyView: View {
         case "direct debit": return "arrow.down.forward"
         default: return "creditcard"
         }
+    }
+
+    private func cleanedStoreName(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
     }
 }

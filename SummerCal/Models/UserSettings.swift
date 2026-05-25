@@ -30,6 +30,7 @@ final class UserSettings {
     var locationEnabled: Bool?
     var approximateLocation: Bool?
     var moneyEntryPreviewLimit: Int?
+    var languageCode: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -61,6 +62,7 @@ final class UserSettings {
         locationEnabled: Bool? = true,
         approximateLocation: Bool? = false,
         moneyEntryPreviewLimit: Int? = 5,
+        languageCode: String? = "en",
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -91,6 +93,7 @@ final class UserSettings {
         self.locationEnabled = locationEnabled
         self.approximateLocation = approximateLocation
         self.moneyEntryPreviewLimit = moneyEntryPreviewLimit
+        self.languageCode = languageCode
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

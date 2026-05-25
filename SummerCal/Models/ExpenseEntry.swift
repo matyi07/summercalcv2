@@ -49,6 +49,7 @@ final class ExpenseEntry {
     var exchangeRateDate: String?
     var category: ExpenseCategory
     var paymentMethod: String
+    var storeName: String?
     var note: String
     var receiptImageData: Data?
     var createdAt: Date
@@ -64,6 +65,7 @@ final class ExpenseEntry {
         exchangeRateDate: String? = nil,
         category: ExpenseCategory = .other,
         paymentMethod: String = "card",
+        storeName: String? = nil,
         note: String = "",
         receiptImageData: Data? = nil,
         createdAt: Date = Date()
@@ -78,6 +80,7 @@ final class ExpenseEntry {
         self.exchangeRateDate = exchangeRateDate
         self.category = category
         self.paymentMethod = paymentMethod
+        self.storeName = storeName
         self.note = note
         self.receiptImageData = receiptImageData
         self.createdAt = createdAt

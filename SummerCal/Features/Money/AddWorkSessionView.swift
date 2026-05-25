@@ -31,7 +31,7 @@ struct AddWorkSessionView: View {
     private var rateAmount: Double { hourlyRate }
 
     private var durationHours: Double {
-        max(endTime.timeIntervalSince(startTime) / 3600, 0)
+        max(sessionEndDateTime.timeIntervalSince(sessionStartBinding.wrappedValue) / 3600, 0)
     }
 
     private var estimatedEarnings: Double {
@@ -39,7 +39,9 @@ struct AddWorkSessionView: View {
     }
 
     private var isValid: Bool {
-        rateAmount > 0 && endTime > startTime
+        rateAmount > 0 &&
+        !workTypeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        sessionEndDateTime > sessionStartBinding.wrappedValue
     }
 
     private var defaultCurrency: String {
@@ -53,22 +55,16 @@ struct AddWorkSessionView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    DatePicker("Date", selection: $date, displayedComponents: [.date])
-                }
-
-                Section {
-                    DatePicker("Start Time", selection: $startTime, displayedComponents: [.hourAndMinute])
-                    DatePicker("End Time", selection: $endTime, in: startTime..., displayedComponents: [.hourAndMinute])
-                }
-
                 WorkTypeSelectionSection(
                     selectedWorkTypeId: $selectedWorkTypeId,
                     workTypeName: $workTypeName,
                     rateText: $hourlyRateText,
                     pricingMode: $pricingMode,
                     currencyCode: $workCurrencyCode,
-                    defaultCurrency: defaultCurrency
+                    defaultCurrency: defaultCurrency,
+                    scheduleStartDate: sessionStartBinding,
+                    scheduleEndDate: sessionEndBinding,
+                    showsScheduleFields: true
                 )
                 .onChange(of: hourlyRateText) { _, newValue in
                     let cleaned = newValue.replacingOccurrences(of: ",", with: ".")
@@ -165,12 +161,49 @@ struct AddWorkSessionView: View {
         Locale.current.decimalSeparator ?? "."
     }
 
+    private var sessionStartBinding: Binding<Date> {
+        Binding(
+            get: {
+                combinedDateTime(date: date, time: startTime)
+            },
+            set: { newValue in
+                date = Calendar.current.startOfDay(for: newValue)
+                startTime = newValue
+                if sessionEndDateTime < newValue {
+                    endTime = newValue.addingTimeInterval(3600)
+                }
+            }
+        )
+    }
+
+    private var sessionEndBinding: Binding<Date> {
+        Binding(
+            get: {
+                sessionEndDateTime
+            },
+            set: { newValue in
+                endTime = max(newValue, sessionStartBinding.wrappedValue.addingTimeInterval(60))
+            }
+        )
+    }
+
+    private var sessionEndDateTime: Date {
+        let calendar = Calendar.current
+        if !calendar.isDate(startTime, inSameDayAs: endTime) {
+            return endTime
+        }
+        return combinedDateTime(date: date, time: endTime)
+    }
+
     private func save() {
-        let sessionStart = combinedDateTime(date: date, time: startTime)
-        let sessionEnd = combinedDateTime(date: date, time: endTime)
+        let sessionStart = sessionStartBinding.wrappedValue
+        let sessionEnd = sessionEndBinding.wrappedValue
         let duration = sessionEnd.timeIntervalSince(sessionStart) / 3600
         let earned = pricingMode == "daily" ? rateAmount : duration * rateAmount
         let cleanedWorkTypeName = workTypeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanedWorkTypeName.isEmpty, rateAmount > 0 {
+            upsertWorkType(named: cleanedWorkTypeName, start: sessionStart, end: sessionEnd)
+        }
 
         if let session = existingSession {
             session.date = Calendar.current.startOfDay(for: sessionStart)
@@ -214,6 +247,35 @@ struct AddWorkSessionView: View {
         WidgetDataService.refreshTodayEvents(modelContext: modelContext)
         onSave?()
         dismiss()
+    }
+
+    private func upsertWorkType(named cleanedName: String, start: Date, end: Date) {
+        let types = (try? modelContext.fetch(FetchDescriptor<WorkType>())) ?? []
+        let selectedType = selectedWorkTypeId.flatMap { id in types.first(where: { $0.id == id }) }
+        let matchingType = types.first { $0.name.caseInsensitiveCompare(cleanedName) == .orderedSame }
+        let type = selectedType ?? matchingType
+
+        if let type {
+            type.name = cleanedName
+            type.rateAmount = rateAmount
+            type.pricingMode = pricingMode
+            type.currencyCode = selectedCurrency
+            type.defaultStartDate = start
+            type.defaultEndDate = end
+            type.updatedAt = Date()
+            selectedWorkTypeId = type.id
+        } else {
+            let type = WorkType(
+                name: cleanedName,
+                rateAmount: rateAmount,
+                pricingMode: pricingMode,
+                currencyCode: selectedCurrency,
+                defaultStartDate: start,
+                defaultEndDate: end
+            )
+            modelContext.insert(type)
+            selectedWorkTypeId = type.id
+        }
     }
 
     private func syncLinkedEvent(from session: WorkSession) {

@@ -11,6 +11,9 @@ struct WorkTypeSelectionSection: View {
     @Binding var currencyCode: String
 
     let defaultCurrency: String
+    var scheduleStartDate: Binding<Date>?
+    var scheduleEndDate: Binding<Date>?
+    var showsScheduleFields: Bool = false
 
     @Query(sort: \WorkType.name) private var workTypes: [WorkType]
 
@@ -37,10 +40,32 @@ struct WorkTypeSelectionSection: View {
                 }
             }
             .onChange(of: selectedWorkTypeId) { _, id in
-                applyWorkType(id)
+                applyWorkType(id, includeSchedule: true)
             }
 
             TextField("Work Type Name", text: $workTypeName)
+
+            if showsScheduleFields,
+               let scheduleStartDate,
+               let scheduleEndDate {
+                DatePicker(
+                    "Work Starts",
+                    selection: scheduleStartDate,
+                    displayedComponents: [.date, .hourAndMinute]
+                )
+                .onChange(of: scheduleStartDate.wrappedValue) { _, newStart in
+                    if scheduleEndDate.wrappedValue < newStart {
+                        scheduleEndDate.wrappedValue = newStart.addingTimeInterval(3600)
+                    }
+                }
+
+                DatePicker(
+                    "Work Ends",
+                    selection: scheduleEndDate,
+                    in: scheduleStartDate.wrappedValue...,
+                    displayedComponents: [.date, .hourAndMinute]
+                )
+            }
 
             Picker("Pricing", selection: $pricingMode) {
                 Label("Hourly", systemImage: "clock").tag("hourly")
@@ -90,11 +115,11 @@ struct WorkTypeSelectionSection: View {
             if currencyCode.isEmpty {
                 currencyCode = defaultCurrency
             }
-            applyWorkType(selectedWorkTypeId)
+            applyWorkType(selectedWorkTypeId, includeSchedule: false)
         }
     }
 
-    private func applyWorkType(_ id: UUID?) {
+    private func applyWorkType(_ id: UUID?, includeSchedule: Bool) {
         guard let id,
               let type = workTypes.first(where: { $0.id == id }) else {
             if currencyCode.isEmpty {
@@ -107,6 +132,13 @@ struct WorkTypeSelectionSection: View {
         rateText = String(format: "%.2f", type.rateAmount).replacingOccurrences(of: ".", with: decimalSeparator())
         pricingMode = type.pricingMode
         currencyCode = type.currencyCode ?? defaultCurrency
+        if includeSchedule,
+           showsScheduleFields,
+           let start = type.defaultStartDate,
+           let end = type.defaultEndDate {
+            scheduleStartDate?.wrappedValue = start
+            scheduleEndDate?.wrappedValue = max(end, start.addingTimeInterval(3600))
+        }
     }
 
     private func saveWorkType() {
@@ -119,13 +151,17 @@ struct WorkTypeSelectionSection: View {
             existing.rateAmount = rateAmount
             existing.pricingMode = pricingMode
             existing.currencyCode = selectedCurrency
+            existing.defaultStartDate = scheduleStartDate?.wrappedValue
+            existing.defaultEndDate = scheduleEndDate?.wrappedValue
             existing.updatedAt = Date()
         } else {
             let type = WorkType(
                 name: cleanedName,
                 rateAmount: rateAmount,
                 pricingMode: pricingMode,
-                currencyCode: selectedCurrency
+                currencyCode: selectedCurrency,
+                defaultStartDate: scheduleStartDate?.wrappedValue,
+                defaultEndDate: scheduleEndDate?.wrappedValue
             )
             modelContext.insert(type)
             selectedWorkTypeId = type.id

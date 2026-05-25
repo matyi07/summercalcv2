@@ -17,6 +17,8 @@ struct SettingsView: View {
 
             locationSection
 
+            languageSection
+
             preferencesSection
 
             currencySection
@@ -108,6 +110,26 @@ struct SettingsView: View {
             if !viewModel.locationEnabled {
                 Text("Location is used for weather and nearby place suggestions.")
             }
+        }
+    }
+
+    private var languageSection: some View {
+        Section {
+            Picker("Language", selection: $viewModel.languageCode) {
+                Text("English").tag("en")
+                Text("Magyar").tag("hu")
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: viewModel.languageCode) { _, _ in
+                viewModel.saveSettings(modelContext: modelContext)
+            }
+        } header: {
+            Text("Language")
+                .font(.footnote)
+                .textCase(.uppercase)
+                .foregroundColor(.secondary)
+        } footer: {
+            Text("Changes are saved automatically and applied to app formatting.")
         }
     }
 

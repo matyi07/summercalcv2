@@ -8,6 +8,8 @@ final class WorkType {
     var rateAmount: Double
     var pricingMode: String
     var currencyCode: String?
+    var defaultStartDate: Date?
+    var defaultEndDate: Date?
     var note: String
     var createdAt: Date
     var updatedAt: Date
@@ -18,6 +20,8 @@ final class WorkType {
         rateAmount: Double,
         pricingMode: String = "hourly",
         currencyCode: String? = nil,
+        defaultStartDate: Date? = nil,
+        defaultEndDate: Date? = nil,
         note: String = "",
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -27,6 +31,8 @@ final class WorkType {
         self.rateAmount = rateAmount
         self.pricingMode = pricingMode
         self.currencyCode = currencyCode
+        self.defaultStartDate = defaultStartDate
+        self.defaultEndDate = defaultEndDate
         self.note = note
         self.createdAt = createdAt
         self.updatedAt = updatedAt

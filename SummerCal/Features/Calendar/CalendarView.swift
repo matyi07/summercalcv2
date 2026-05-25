@@ -171,6 +171,7 @@ struct CalendarView: View {
             }
         }
         .padding(.horizontal, 8)
+        .padding(.bottom, 12)
         .contentShape(Rectangle())
         .simultaneousGesture(monthSwipeGesture)
     }

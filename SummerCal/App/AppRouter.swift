@@ -15,6 +15,18 @@ enum AppTab: String, CaseIterable {
         }
     }
 
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .today: "Today"
+        case .calendar: "Calendar"
+        case .aiPlanner: "AI"
+        case .places: "Places"
+        case .weather: "Weather"
+        case .money: "Money"
+        case .settings: "Settings"
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .today: "house"

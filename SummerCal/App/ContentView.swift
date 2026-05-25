@@ -7,6 +7,12 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var locationService = LocationService()
     @State private var weatherService = WeatherService()
+    @Query(sort: \UserSettings.createdAt) private var settings: [UserSettings]
+
+    private var appLocale: Locale {
+        let code = settings.first?.languageCode ?? "en"
+        return Locale(identifier: code == "hu" ? "hu_HU" : "en_US")
+    }
 
     var body: some View {
 
@@ -18,7 +24,7 @@ struct ContentView: View {
                             destinationView(for: route)
                         }
                 }
-                .tabItem { Label(AppTab.today.title, systemImage: AppTab.today.systemImage) }
+                .tabItem { Label(AppTab.today.titleKey, systemImage: AppTab.today.systemImage) }
                 .tag(AppTab.today)
 
                 NavigationStack(path: $router.calendarNavigationPath) {
@@ -27,19 +33,19 @@ struct ContentView: View {
                             destinationView(for: route)
                         }
                 }
-                .tabItem { Label(AppTab.calendar.title, systemImage: AppTab.calendar.systemImage) }
+                .tabItem { Label(AppTab.calendar.titleKey, systemImage: AppTab.calendar.systemImage) }
                 .tag(AppTab.calendar)
 
                 NavigationStack {
                     PlacesView()
                 }
-                .tabItem { Label(AppTab.places.title, systemImage: AppTab.places.systemImage) }
+                .tabItem { Label(AppTab.places.titleKey, systemImage: AppTab.places.systemImage) }
                 .tag(AppTab.places)
 
                 NavigationStack {
                     MoneyView()
                 }
-                .tabItem { Label(AppTab.money.title, systemImage: AppTab.money.systemImage) }
+                .tabItem { Label(AppTab.money.titleKey, systemImage: AppTab.money.systemImage) }
                 .tag(AppTab.money)
 
                 NavigationStack(path: $router.settingsNavigationPath) {
@@ -48,10 +54,11 @@ struct ContentView: View {
                             destinationView(for: route)
                         }
                 }
-                .tabItem { Label(AppTab.settings.title, systemImage: AppTab.settings.systemImage) }
+                .tabItem { Label(AppTab.settings.titleKey, systemImage: AppTab.settings.systemImage) }
                 .tag(AppTab.settings)
             }
             .tint(.orange)
+            .environment(\.locale, appLocale)
             .environmentObject(locationService)
             .environmentObject(weatherService)
             .sheet(item: $router.presentedSheet) { sheet in

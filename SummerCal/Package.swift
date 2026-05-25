@@ -28,7 +28,9 @@ let package = Package(
                 "Utilities"
             ],
             resources: [
-                .process("Resources")
+                .process("Resources"),
+                .process("en.lproj"),
+                .process("hu.lproj")
             ],
             swiftSettings: [
                 .enableUpcomingFeature("BareSlashRegexLiterals")

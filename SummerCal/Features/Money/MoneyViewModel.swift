@@ -17,11 +17,19 @@ final class MoneyViewModel {
     var expenseDisplayAmounts: [UUID: Double] = [:]
     var workDisplayAmounts: [UUID: Double] = [:]
     var savingsDisplayAmounts: [UUID: Double] = [:]
+    var savingsPrimaryDisplayAmounts: [UUID: Double] = [:]
     var savingsIncomeDisplayAmounts: [UUID: Double] = [:]
     var savingsGoalDisplayTargets: [UUID: Double] = [:]
     var currencyConversionError: String?
 
     private let currencyConverter = CurrencyConversionService()
+
+    struct StoreExpenseGroup: Identifiable {
+        let id: String
+        let name: String
+        let count: Int
+        let total: Double
+    }
 
     var totalIncome: Double {
         incomeEntries
@@ -95,6 +103,26 @@ final class MoneyViewModel {
 
     var recentExpenseEntries: [ExpenseEntry] {
         Array(expenseEntries.prefix(entryPreviewLimit))
+    }
+
+    var storeExpenseGroups: [StoreExpenseGroup] {
+        let grouped = Dictionary(grouping: expenseEntries.compactMap { entry -> (key: String, name: String, entry: ExpenseEntry)? in
+            guard let name = cleanedStoreName(entry.storeName) else { return nil }
+            return (key: name.lowercased(), name: name, entry: entry)
+        }, by: { $0.key })
+
+        return grouped.map { key, values in
+            StoreExpenseGroup(
+                id: key,
+                name: values.first?.name ?? key,
+                count: values.count,
+                total: values.reduce(0) { $0 + displayAmount(for: $1.entry) }
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.total == rhs.total { return lhs.name < rhs.name }
+            return lhs.total > rhs.total
+        }
     }
 
     var recentSavingsEntries: [SavingsEntry] {
@@ -196,6 +224,7 @@ final class MoneyViewModel {
         expenseDisplayAmounts = Dictionary(uniqueKeysWithValues: expenseEntries.map { ($0.id, $0.amount) })
         workDisplayAmounts = Dictionary(uniqueKeysWithValues: workSessions.map { ($0.id, $0.totalEarned) })
         savingsDisplayAmounts = Dictionary(uniqueKeysWithValues: savingsEntries.map { ($0.id, $0.amount) })
+        savingsPrimaryDisplayAmounts = Dictionary(uniqueKeysWithValues: savingsEntries.map { ($0.id, primarySavingsFallbackAmount(for: $0)) })
         savingsIncomeDisplayAmounts = Dictionary(uniqueKeysWithValues: savingsIncomeEntries.map { ($0.id, $0.amount) })
         savingsGoalDisplayTargets = Dictionary(uniqueKeysWithValues: savingsGoals.map { ($0.id, $0.targetAmount) })
         currencyConversionError = nil
@@ -232,6 +261,12 @@ final class MoneyViewModel {
             savingsDisplayAmounts[entry.id] = await convertedAmount(
                 entry.amount,
                 from: entry.currencyCode,
+                fallbackCurrency: currencyCode
+            )
+            savingsPrimaryDisplayAmounts[entry.id] = await convertedAmount(
+                entry.amount,
+                from: entry.currencyCode,
+                to: primarySavingsCurrency(for: entry),
                 fallbackCurrency: currencyCode
             )
         }
@@ -369,13 +404,13 @@ final class MoneyViewModel {
     }
 
     func primarySavingsAmountText(for entry: SavingsEntry) -> String {
-        let primaryAmount = entry.originalAmount ?? entry.amount
-        let primaryCurrency = currencyConverter.normalizedCurrencyCode(entry.originalCurrencyCode) ?? entry.currencyCode ?? currencyCode
+        let primaryCurrency = primarySavingsCurrency(for: entry)
+        let primaryAmount = savingsPrimaryDisplayAmounts[entry.id] ?? primarySavingsFallbackAmount(for: entry)
         return formatCurrency(primaryAmount, currency: primaryCurrency)
     }
 
     func secondarySavingsAmountText(for entry: SavingsEntry) -> String? {
-        let primaryCurrency = currencyConverter.normalizedCurrencyCode(entry.originalCurrencyCode) ?? entry.currencyCode ?? currencyCode
+        let primaryCurrency = primarySavingsCurrency(for: entry)
         guard primaryCurrency != currencyCode else { return nil }
         return "App value: \(formatCurrency(displayAmount(for: entry)))"
     }
@@ -401,14 +436,24 @@ final class MoneyViewModel {
             .reduce(0) { $0 + displayAmount(for: $1) }
     }
 
+    func primaryAllocatedAmount(for goal: SavingsGoal) -> Double {
+        savingsEntries
+            .filter { $0.goalId == goal.id }
+            .reduce(0) { $0 + (savingsPrimaryDisplayAmounts[$1.id] ?? primarySavingsFallbackAmount(for: $1)) }
+    }
+
     func remainingAmount(for goal: SavingsGoal) -> Double {
         max(displayTarget(for: goal) - allocatedAmount(for: goal), 0)
     }
 
+    func primaryRemainingAmount(for goal: SavingsGoal) -> Double {
+        max(goal.targetAmount - primaryAllocatedAmount(for: goal), 0)
+    }
+
     func progress(for goal: SavingsGoal) -> Double {
-        let target = displayTarget(for: goal)
+        let target = goal.targetAmount
         guard target > 0 else { return 0 }
-        return min(allocatedAmount(for: goal) / target, 1)
+        return min(primaryAllocatedAmount(for: goal) / target, 1)
     }
 
     func goalName(for id: UUID?) -> String {
@@ -422,14 +467,19 @@ final class MoneyViewModel {
     }
 
     private func convertedAmount(_ amount: Double, from sourceCurrency: String?, fallbackCurrency: String) async -> Double {
+        await convertedAmount(amount, from: sourceCurrency, to: currencyCode, fallbackCurrency: fallbackCurrency)
+    }
+
+    private func convertedAmount(_ amount: Double, from sourceCurrency: String?, to targetCurrency: String, fallbackCurrency: String) async -> Double {
         let source = currencyConverter.normalizedCurrencyCode(sourceCurrency) ?? fallbackCurrency
-        guard source != currencyCode else { return amount }
+        let target = currencyConverter.normalizedCurrencyCode(targetCurrency) ?? currencyCode
+        guard source != target else { return amount }
 
         do {
-            let result = try await currencyConverter.convert(amount: amount, from: source, to: currencyCode)
+            let result = try await currencyConverter.convert(amount: amount, from: source, to: target)
             return result.convertedAmount
         } catch {
-            currencyConversionError = "Some entries could not be converted to \(currencyCode). Showing their stored values."
+            currencyConversionError = "Some entries could not be converted. Showing their stored values."
             return amount
         }
     }
@@ -441,6 +491,35 @@ final class MoneyViewModel {
             return nil
         }
         return "Original: \(formatCurrency(originalAmount, currency: originalCurrency))"
+    }
+
+    private func cleanedStoreName(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
+    }
+
+    private func primarySavingsCurrency(for entry: SavingsEntry) -> String {
+        if let goalId = entry.goalId,
+           let goal = savingsGoals.first(where: { $0.id == goalId }),
+           let goalCurrency = currencyConverter.normalizedCurrencyCode(goal.currencyCode) {
+            return goalCurrency
+        }
+        return currencyConverter.normalizedCurrencyCode(entry.originalCurrencyCode)
+            ?? currencyConverter.normalizedCurrencyCode(entry.currencyCode)
+            ?? currencyCode
+    }
+
+    private func primarySavingsFallbackAmount(for entry: SavingsEntry) -> Double {
+        let primaryCurrency = primarySavingsCurrency(for: entry)
+        if currencyConverter.normalizedCurrencyCode(entry.originalCurrencyCode) == primaryCurrency,
+           let originalAmount = entry.originalAmount {
+            return originalAmount
+        }
+        if currencyConverter.normalizedCurrencyCode(entry.currencyCode) == primaryCurrency {
+            return entry.amount
+        }
+        return displayAmount(for: entry)
     }
 
     private func combinedDateTime(date: Date, time: Date) -> Date {
