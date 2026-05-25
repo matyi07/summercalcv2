@@ -18,6 +18,10 @@ struct AddSavingsGoalView: View {
     private let currencies = ["USD", "EUR", "GBP", "HUF", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN", "BRL", "KRW"]
     private let icons = ["target", "house", "airplane", "car", "graduationcap", "laptopcomputer", "heart", "gift", "sparkles", "briefcase"]
 
+    private var navigationTitleKey: LocalizedStringKey {
+        existingGoal == nil ? "Savings Goal" : "Edit Goal"
+    }
+
     private var targetAmount: Double {
         Double(targetText.replacingOccurrences(of: ",", with: ".")) ?? 0
     }
@@ -65,7 +69,7 @@ struct AddSavingsGoalView: View {
                     }
                 }
             }
-            .navigationTitle(existingGoal == nil ? "Savings Goal" : "Edit Goal")
+            .navigationTitle(navigationTitleKey)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

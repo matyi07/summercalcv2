@@ -20,6 +20,10 @@ struct AddSavingsEntryView: View {
 
     private let currencies = ["USD", "EUR", "GBP", "HUF", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN", "BRL", "KRW"]
 
+    private var navigationTitleKey: LocalizedStringKey {
+        existingEntry == nil ? "Savings Entry" : "Edit Savings"
+    }
+
     private var amount: Double {
         Double(amountText.replacingOccurrences(of: ",", with: ".")) ?? 0
     }
@@ -88,7 +92,7 @@ struct AddSavingsEntryView: View {
                     }
                 }
             }
-            .navigationTitle(existingEntry == nil ? "Savings Entry" : "Edit Savings")
+            .navigationTitle(navigationTitleKey)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

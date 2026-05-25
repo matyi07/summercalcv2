@@ -21,6 +21,10 @@ struct AddIncomeView: View {
     var onSave: (() -> Void)?
 
     private var isEditing: Bool { existingEntry != nil }
+    private var navigationTitleKey: LocalizedStringKey {
+        isEditing ? "Edit Income" : "Add Income"
+    }
+
     private let currencies = ["USD", "EUR", "GBP", "HUF", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN", "BRL", "KRW"]
 
     private var sanitizedAmount: Double {
@@ -109,7 +113,7 @@ struct AddIncomeView: View {
                 }
             }
             .sensoryFeedback(.error, trigger: amountErrorTrigger)
-            .navigationTitle(isEditing ? "Edit Income" : "Add Income")
+            .navigationTitle(navigationTitleKey)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -151,7 +155,7 @@ struct AddIncomeView: View {
         Locale.current.decimalSeparator ?? "."
     }
 
-    private func categoryDisplayName(_ category: IncomeCategory) -> String {
+    private func categoryDisplayName(_ category: IncomeCategory) -> LocalizedStringKey {
         switch category {
         case .salary: return "Salary"
         case .freelance: return "Freelance"

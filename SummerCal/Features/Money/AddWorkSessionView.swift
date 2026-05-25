@@ -23,6 +23,10 @@ struct AddWorkSessionView: View {
 
     private var isEditing: Bool { existingSession != nil }
 
+    private var navigationTitleKey: LocalizedStringKey {
+        isEditing ? "Edit Work Session" : "Add Work Session"
+    }
+
     private var hourlyRate: Double {
         let cleaned = hourlyRateText.replacingOccurrences(of: ",", with: ".")
         return Double(cleaned) ?? 0
@@ -55,6 +59,10 @@ struct AddWorkSessionView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Date") {
+                    DatePicker("Date", selection: $date, displayedComponents: [.date])
+                }
+
                 WorkTypeSelectionSection(
                     selectedWorkTypeId: $selectedWorkTypeId,
                     workTypeName: $workTypeName,
@@ -62,9 +70,9 @@ struct AddWorkSessionView: View {
                     pricingMode: $pricingMode,
                     currencyCode: $workCurrencyCode,
                     defaultCurrency: defaultCurrency,
-                    scheduleStartDate: sessionStartBinding,
-                    scheduleEndDate: sessionEndBinding,
-                    showsScheduleFields: true
+                    workStartTime: sessionStartBinding,
+                    workEndTime: sessionEndBinding,
+                    showsWorkHours: true
                 )
                 .onChange(of: hourlyRateText) { _, newValue in
                     let cleaned = newValue.replacingOccurrences(of: ",", with: ".")
@@ -106,7 +114,7 @@ struct AddWorkSessionView: View {
                 }
             }
             .sensoryFeedback(.error, trigger: rateErrorTrigger)
-            .navigationTitle(isEditing ? "Edit Work Session" : "Add Work Session")
+            .navigationTitle(navigationTitleKey)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -202,7 +210,7 @@ struct AddWorkSessionView: View {
         let earned = pricingMode == "daily" ? rateAmount : duration * rateAmount
         let cleanedWorkTypeName = workTypeName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !cleanedWorkTypeName.isEmpty, rateAmount > 0 {
-            upsertWorkType(named: cleanedWorkTypeName, start: sessionStart, end: sessionEnd)
+            upsertWorkType(named: cleanedWorkTypeName)
         }
 
         if let session = existingSession {
@@ -249,7 +257,7 @@ struct AddWorkSessionView: View {
         dismiss()
     }
 
-    private func upsertWorkType(named cleanedName: String, start: Date, end: Date) {
+    private func upsertWorkType(named cleanedName: String) {
         let types = (try? modelContext.fetch(FetchDescriptor<WorkType>())) ?? []
         let selectedType = selectedWorkTypeId.flatMap { id in types.first(where: { $0.id == id }) }
         let matchingType = types.first { $0.name.caseInsensitiveCompare(cleanedName) == .orderedSame }
@@ -260,8 +268,7 @@ struct AddWorkSessionView: View {
             type.rateAmount = rateAmount
             type.pricingMode = pricingMode
             type.currencyCode = selectedCurrency
-            type.defaultStartDate = start
-            type.defaultEndDate = end
+            persistWorkHours(on: type)
             type.updatedAt = Date()
             selectedWorkTypeId = type.id
         } else {
@@ -269,13 +276,24 @@ struct AddWorkSessionView: View {
                 name: cleanedName,
                 rateAmount: rateAmount,
                 pricingMode: pricingMode,
-                currencyCode: selectedCurrency,
-                defaultStartDate: start,
-                defaultEndDate: end
+                currencyCode: selectedCurrency
             )
+            persistWorkHours(on: type)
             modelContext.insert(type)
             selectedWorkTypeId = type.id
         }
+    }
+
+    private func persistWorkHours(on type: WorkType) {
+        let calendar = Calendar.current
+        let startComponents = calendar.dateComponents([.hour, .minute], from: sessionStartBinding.wrappedValue)
+        let endComponents = calendar.dateComponents([.hour, .minute], from: sessionEndBinding.wrappedValue)
+        type.defaultStartHour = startComponents.hour
+        type.defaultStartMinute = startComponents.minute
+        type.defaultEndHour = endComponents.hour
+        type.defaultEndMinute = endComponents.minute
+        type.defaultStartDate = nil
+        type.defaultEndDate = nil
     }
 
     private func syncLinkedEvent(from session: WorkSession) {

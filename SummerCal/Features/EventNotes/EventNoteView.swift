@@ -16,6 +16,9 @@ struct EventNoteView: View {
     @State private var newLink: String = ""
 
     private var eventNoteViewModel: EventNoteViewModel
+    private var navigationTitleKey: LocalizedStringKey {
+        existingNote == nil ? "New Note" : "Edit Note"
+    }
 
     init(eventId: UUID, existingNote: EventNote? = nil, eventNoteViewModel: EventNoteViewModel = EventNoteViewModel()) {
         self.eventId = eventId
@@ -103,7 +106,7 @@ struct EventNoteView: View {
                     }
                 }
             }
-            .navigationTitle(existingNote == nil ? "New Note" : "Edit Note")
+            .navigationTitle(navigationTitleKey)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -152,7 +155,7 @@ struct EventNoteView: View {
 }
 
 private extension EventNoteType {
-    var displayName: String {
+    var displayName: LocalizedStringKey {
         switch self {
         case .general: return "General"
         case .prep: return "Prep"

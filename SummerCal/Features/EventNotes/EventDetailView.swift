@@ -156,7 +156,7 @@ struct EventDetailView: View {
                 }
 
                 if let category = event.category {
-                    Label(category.capitalized, systemImage: "tag")
+                    Label(categoryDisplayName(category), systemImage: "tag")
                         .font(.subheadline)
                         .foregroundColor(Color(.systemGray))
                 }
@@ -559,5 +559,18 @@ struct EventDetailView: View {
         if lower.contains("fog") { return "cloud.fog" }
         if lower.contains("wind") { return "wind" }
         return "cloud.sun"
+    }
+
+    private func categoryDisplayName(_ category: String) -> LocalizedStringKey {
+        switch category {
+        case "work": return "Work"
+        case "meeting": return "Meeting"
+        case "workout": return "Workout"
+        case "appointment": return "Appointment"
+        case "travel": return "Travel"
+        case "social": return "Social"
+        case "errand": return "Errand"
+        default: return "General"
+        }
     }
 }

@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import GoogleMaps
 
 struct ContentView: View {
     @EnvironmentObject private var router: AppRouter
@@ -72,9 +71,6 @@ struct ContentView: View {
         }
         .onOpenURL { url in
             handleDeepLink(url)
-        }
-        .task(priority: .background) {
-            GMSServices.provideAPIKey(GoogleAPI.defaultKey)
         }
     }
 

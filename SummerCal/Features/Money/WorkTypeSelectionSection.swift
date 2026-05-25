@@ -11,9 +11,9 @@ struct WorkTypeSelectionSection: View {
     @Binding var currencyCode: String
 
     let defaultCurrency: String
-    var scheduleStartDate: Binding<Date>?
-    var scheduleEndDate: Binding<Date>?
-    var showsScheduleFields: Bool = false
+    var workStartTime: Binding<Date>?
+    var workEndTime: Binding<Date>?
+    var showsWorkHours: Bool = false
 
     @Query(sort: \WorkType.name) private var workTypes: [WorkType]
 
@@ -25,6 +25,14 @@ struct WorkTypeSelectionSection: View {
 
     private var rateAmount: Double {
         Double(rateText.replacingOccurrences(of: ",", with: ".")) ?? 0
+    }
+
+    private var ratePlaceholderKey: LocalizedStringKey {
+        pricingMode == "daily" ? "Daily Rate" : "Hourly Rate"
+    }
+
+    private var saveButtonTitleKey: LocalizedStringKey {
+        selectedWorkTypeId == nil ? "Save Type" : "Update Type"
     }
 
     private var canSaveWorkType: Bool {
@@ -45,26 +53,30 @@ struct WorkTypeSelectionSection: View {
 
             TextField("Work Type Name", text: $workTypeName)
 
-            if showsScheduleFields,
-               let scheduleStartDate,
-               let scheduleEndDate {
+            if showsWorkHours,
+               let workStartTime,
+               let workEndTime {
                 DatePicker(
                     "Work Starts",
-                    selection: scheduleStartDate,
-                    displayedComponents: [.date, .hourAndMinute]
+                    selection: workStartTime,
+                    displayedComponents: [.hourAndMinute]
                 )
-                .onChange(of: scheduleStartDate.wrappedValue) { _, newStart in
-                    if scheduleEndDate.wrappedValue < newStart {
-                        scheduleEndDate.wrappedValue = newStart.addingTimeInterval(3600)
+                .onChange(of: workStartTime.wrappedValue) { _, newStart in
+                    if workEndTime.wrappedValue <= newStart {
+                        workEndTime.wrappedValue = newStart.addingTimeInterval(3600)
                     }
                 }
 
                 DatePicker(
                     "Work Ends",
-                    selection: scheduleEndDate,
-                    in: scheduleStartDate.wrappedValue...,
-                    displayedComponents: [.date, .hourAndMinute]
+                    selection: workEndTime,
+                    displayedComponents: [.hourAndMinute]
                 )
+                .onChange(of: workEndTime.wrappedValue) { _, newEnd in
+                    if newEnd <= workStartTime.wrappedValue {
+                        workEndTime.wrappedValue = workStartTime.wrappedValue.addingTimeInterval(3600)
+                    }
+                }
             }
 
             Picker("Pricing", selection: $pricingMode) {
@@ -82,13 +94,15 @@ struct WorkTypeSelectionSection: View {
             HStack {
                 Text(selectedCurrency)
                     .foregroundStyle(Color(.systemGray))
-                TextField(pricingMode == "daily" ? "Daily Rate" : "Hourly Rate", text: $rateText)
+                TextField(ratePlaceholderKey, text: $rateText)
                     .keyboardType(.decimalPad)
             }
 
             HStack(spacing: 12) {
-                Button(selectedWorkTypeId == nil ? "Save Type" : "Update Type") {
+                Button {
                     saveWorkType()
+                } label: {
+                    Text(saveButtonTitleKey)
                 }
                 .buttonStyle(.borderless)
                 .disabled(!canSaveWorkType)
@@ -132,12 +146,8 @@ struct WorkTypeSelectionSection: View {
         rateText = String(format: "%.2f", type.rateAmount).replacingOccurrences(of: ".", with: decimalSeparator())
         pricingMode = type.pricingMode
         currencyCode = type.currencyCode ?? defaultCurrency
-        if includeSchedule,
-           showsScheduleFields,
-           let start = type.defaultStartDate,
-           let end = type.defaultEndDate {
-            scheduleStartDate?.wrappedValue = start
-            scheduleEndDate?.wrappedValue = max(end, start.addingTimeInterval(3600))
+        if includeSchedule, showsWorkHours {
+            applyStoredWorkHours(from: type)
         }
     }
 
@@ -151,18 +161,16 @@ struct WorkTypeSelectionSection: View {
             existing.rateAmount = rateAmount
             existing.pricingMode = pricingMode
             existing.currencyCode = selectedCurrency
-            existing.defaultStartDate = scheduleStartDate?.wrappedValue
-            existing.defaultEndDate = scheduleEndDate?.wrappedValue
+            persistWorkHours(on: existing)
             existing.updatedAt = Date()
         } else {
             let type = WorkType(
                 name: cleanedName,
                 rateAmount: rateAmount,
                 pricingMode: pricingMode,
-                currencyCode: selectedCurrency,
-                defaultStartDate: scheduleStartDate?.wrappedValue,
-                defaultEndDate: scheduleEndDate?.wrappedValue
+                currencyCode: selectedCurrency
             )
+            persistWorkHours(on: type)
             modelContext.insert(type)
             selectedWorkTypeId = type.id
         }
@@ -180,5 +188,86 @@ struct WorkTypeSelectionSection: View {
 
     private func decimalSeparator() -> String {
         Locale.current.decimalSeparator ?? "."
+    }
+
+    private func applyStoredWorkHours(from type: WorkType) {
+        guard let workStartTime else { return }
+
+        let calendar = Calendar.current
+        let currentStart = workStartTime.wrappedValue
+        if let startComponents = storedTimeComponents(
+            hour: type.defaultStartHour,
+            minute: type.defaultStartMinute,
+            legacyDate: type.defaultStartDate
+        ),
+           let start = calendar.date(
+            bySettingHour: startComponents.hour ?? 0,
+            minute: startComponents.minute ?? 0,
+            second: 0,
+            of: currentStart
+           ) {
+            workStartTime.wrappedValue = start
+        }
+
+        guard let workEndTime else { return }
+
+        let currentEndBase = workStartTime.wrappedValue
+        if let endComponents = storedTimeComponents(
+            hour: type.defaultEndHour,
+            minute: type.defaultEndMinute,
+            legacyDate: type.defaultEndDate
+        ),
+           let end = calendar.date(
+            bySettingHour: endComponents.hour ?? 0,
+            minute: endComponents.minute ?? 0,
+            second: 0,
+            of: currentEndBase
+           ) {
+            workEndTime.wrappedValue = normalizedEnd(start: workStartTime.wrappedValue, end: end)
+        } else if workEndTime.wrappedValue <= workStartTime.wrappedValue {
+            workEndTime.wrappedValue = workStartTime.wrappedValue.addingTimeInterval(3600)
+        }
+    }
+
+    private func persistWorkHours(on type: WorkType) {
+        if let start = workStartTime?.wrappedValue {
+            let components = Calendar.current.dateComponents([.hour, .minute], from: start)
+            type.defaultStartHour = components.hour
+            type.defaultStartMinute = components.minute
+        } else {
+            type.defaultStartHour = nil
+            type.defaultStartMinute = nil
+        }
+
+        if let end = workEndTime?.wrappedValue {
+            let components = Calendar.current.dateComponents([.hour, .minute], from: end)
+            type.defaultEndHour = components.hour
+            type.defaultEndMinute = components.minute
+        } else {
+            type.defaultEndHour = nil
+            type.defaultEndMinute = nil
+        }
+
+        type.defaultStartDate = nil
+        type.defaultEndDate = nil
+    }
+
+    private func storedTimeComponents(hour: Int?, minute: Int?, legacyDate: Date?) -> DateComponents? {
+        if let hour, let minute {
+            var components = DateComponents()
+            components.hour = hour
+            components.minute = minute
+            return components
+        }
+
+        guard let legacyDate else { return nil }
+        return Calendar.current.dateComponents([.hour, .minute], from: legacyDate)
+    }
+
+    private func normalizedEnd(start: Date, end: Date) -> Date {
+        if end <= start {
+            return start.addingTimeInterval(3600)
+        }
+        return end
     }
 }

@@ -70,6 +70,13 @@ struct AddExpenseView: View {
     }
 
     private var isEditing: Bool { existingEntry != nil }
+    private var navigationTitleKey: LocalizedStringKey {
+        isEditing ? "Edit Expense" : "Add Expense"
+    }
+    private var choosePhotoTitleKey: LocalizedStringKey {
+        receiptImages.isEmpty ? "Choose Photo" : "Choose Photos"
+    }
+
     private let paymentMethods = ["card", "cash", "transfer", "direct debit"]
     private let currencies = ["USD", "EUR", "GBP", "HUF", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN", "BRL", "KRW"]
 
@@ -121,14 +128,14 @@ struct AddExpenseView: View {
 
                     Picker("Category", selection: $category) {
                         ForEach(ExpenseCategory.allCases, id: \.self) { cat in
-                            Label(cat.label, systemImage: cat.icon)
+                            Label(LocalizedStringKey(cat.label), systemImage: cat.icon)
                                 .tag(cat)
                         }
                     }
 
                     Picker("Payment Method", selection: $paymentMethod) {
                         ForEach(paymentMethods, id: \.self) { method in
-                            Label(method.capitalized, systemImage: paymentIcon(method))
+                            Label(paymentMethodDisplayName(method), systemImage: paymentIcon(method))
                                 .tag(method)
                         }
                     }
@@ -154,7 +161,7 @@ struct AddExpenseView: View {
                 }
             }
             .sensoryFeedback(.error, trigger: amountErrorTrigger)
-            .navigationTitle(isEditing ? "Edit Expense" : "Add Expense")
+            .navigationTitle(navigationTitleKey)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -289,7 +296,7 @@ struct AddExpenseView: View {
                 PhotosPicker(selection: $selectedPhotos, maxSelectionCount: isEditing ? 1 : 5, matching: .images) {
                     VStack(spacing: 6) {
                         Image(systemName: "photo.on.rectangle").font(.title2)
-                        Text("Choose Photo\(receiptImages.isEmpty ? "" : "s")").font(.caption)
+                        Text(choosePhotoTitleKey).font(.caption)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
@@ -373,6 +380,15 @@ struct AddExpenseView: View {
             return "Scan & Add \(receiptImages.count) Expenses"
         }
         return "Scan \(receiptImages.count) Receipt\(receiptImages.count > 1 ? "s" : "") with AI"
+    }
+
+    private func paymentMethodDisplayName(_ method: String) -> LocalizedStringKey {
+        switch method {
+        case "cash": return "Cash"
+        case "transfer": return "Transfer"
+        case "direct debit": return "Direct Debit"
+        default: return "Card"
+        }
     }
 
     @MainActor

@@ -1,13 +1,15 @@
 import SwiftUI
 import SwiftData
+import GoogleMaps
 
 @main
 struct SummerCalApp: App {
     @State private var appRouter = AppRouter()
-    @State private var mapsInitialized = false
 
-    private let modelContainer: ModelContainer = {
-        let schema = Schema([
+    private let modelContainer: ModelContainer = SummerCalApp.makeModelContainer()
+
+    private static var appSchema: Schema {
+        Schema([
             CalendarEvent.self,
             EventNote.self,
             EventReminder.self,
@@ -24,22 +26,41 @@ struct SummerCalApp: App {
             WorkType.self,
             UserSettings.self,
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+    }
+
+    private static func makeModelContainer() -> ModelContainer {
+        let schema = appSchema
+        let persistentConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+
         do {
-            let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
-            let context = container.mainContext
-            if (try? context.fetch(FetchDescriptor<UserSettings>(sortBy: [SortDescriptor(\.createdAt)])).isEmpty) ?? true {
-                let defaultSettings = UserSettings()
-                context.insert(defaultSettings)
-                try? context.save()
-            }
+            let container = try ModelContainer(for: schema, configurations: [persistentConfiguration])
+            seedDefaultSettings(in: container)
             return container
         } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
+            debugPrint("Failed to create persistent ModelContainer, using in-memory fallback: \(error)")
         }
-    }()
+
+        let memoryConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        do {
+            let container = try ModelContainer(for: schema, configurations: [memoryConfiguration])
+            seedDefaultSettings(in: container)
+            return container
+        } catch {
+            fatalError("Failed to create fallback ModelContainer: \(error)")
+        }
+    }
+
+    private static func seedDefaultSettings(in container: ModelContainer) {
+        let context = container.mainContext
+        if (try? context.fetch(FetchDescriptor<UserSettings>(sortBy: [SortDescriptor(\.createdAt)])).isEmpty) ?? true {
+            let defaultSettings = UserSettings()
+            context.insert(defaultSettings)
+            try? context.save()
+        }
+    }
 
     init() {
+        GMSServices.provideAPIKey(GoogleAPI.defaultKey)
         _ = NotificationService.shared
     }
 

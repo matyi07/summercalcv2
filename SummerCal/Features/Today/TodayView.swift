@@ -210,7 +210,7 @@ struct TodayView: View {
 
                             HStack(spacing: 8) {
                                 if let category = event.category, !category.isEmpty {
-                                    Label(category.capitalized, systemImage: "tag")
+                                    Label(eventCategoryDisplayName(category), systemImage: "tag")
                                         .font(.caption2)
                                         .foregroundStyle(Color(.systemGray))
                                 }
@@ -751,5 +751,18 @@ struct TodayView: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private func eventCategoryDisplayName(_ category: String) -> LocalizedStringKey {
+        switch category {
+        case "work": return "Work"
+        case "meeting": return "Meeting"
+        case "workout": return "Workout"
+        case "appointment": return "Appointment"
+        case "travel": return "Travel"
+        case "social": return "Social"
+        case "errand": return "Errand"
+        default: return "General"
+        }
     }
 }

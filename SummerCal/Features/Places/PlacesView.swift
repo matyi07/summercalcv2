@@ -88,7 +88,7 @@ struct PlacesView: View {
                             viewModel.selectedCategory = category
                             Task { await viewModel.searchPlaces(modelContext: modelContext) }
                         } label: {
-                            Label(category.label, systemImage: category.icon)
+                            Label(LocalizedStringKey(category.label), systemImage: category.icon)
                                 .font(.caption)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
@@ -144,7 +144,7 @@ struct PlacesView: View {
                             viewModel.selectedMapStyle = option
                         } label: {
                             HStack {
-                                Label(option.label, systemImage: option.icon)
+                                Label(LocalizedStringKey(option.label), systemImage: option.icon)
                                 if viewModel.selectedMapStyle == option {
                                     Image(systemName: "checkmark")
                                 }

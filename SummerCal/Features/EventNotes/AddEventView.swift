@@ -46,6 +46,10 @@ struct AddEventView: View {
         category == "work"
     }
 
+    private var navigationTitleKey: LocalizedStringKey {
+        existingEvent == nil ? "New Event" : "Edit Event"
+    }
+
     private var workRateAmount: Double {
         Double(workRateText.replacingOccurrences(of: ",", with: ".")) ?? 0
     }
@@ -68,7 +72,8 @@ struct AddEventView: View {
 
                 Section("Time") {
                     if isWorkEvent {
-                        Label("Set the full work start and end in the Work Type section.", systemImage: "briefcase")
+                        workDayPicker
+                        Label("Saved work types apply work hours only. Choose the work day here.", systemImage: "briefcase")
                             .font(.caption)
                             .foregroundStyle(Color(.systemGray))
                     } else {
@@ -88,7 +93,7 @@ struct AddEventView: View {
                 Section("Details") {
                     Picker("Type", selection: $category) {
                         ForEach(categories, id: \.self) { cat in
-                            Label(cat.capitalized, systemImage: iconForCategory(cat))
+                            Label(categoryDisplayName(cat), systemImage: iconForCategory(cat))
                                 .tag(cat)
                         }
                     }
@@ -117,9 +122,9 @@ struct AddEventView: View {
                         pricingMode: $workPricingMode,
                         currencyCode: $workCurrencyCode,
                         defaultCurrency: defaultCurrency,
-                        scheduleStartDate: $startDate,
-                        scheduleEndDate: $endDate,
-                        showsScheduleFields: true
+                        workStartTime: $startDate,
+                        workEndTime: $endDate,
+                        showsWorkHours: true
                     )
                 }
 
@@ -185,7 +190,7 @@ struct AddEventView: View {
                     Text("Reminder")
                 }
             }
-            .navigationTitle(existingEvent == nil ? "New Event" : "Edit Event")
+            .navigationTitle(navigationTitleKey)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -275,6 +280,24 @@ struct AddEventView: View {
             .onChange(of: startDate) { _, newStart in
                 normalizeDatesAfterStartChange(newStart)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var workDayPicker: some View {
+        if existingEvent == nil {
+            DatePicker(
+                "Work Day",
+                selection: workDayBinding,
+                in: Calendar.current.startOfDay(for: Date())...,
+                displayedComponents: [.date]
+            )
+        } else {
+            DatePicker(
+                "Work Day",
+                selection: workDayBinding,
+                displayedComponents: [.date]
+            )
         }
     }
 
@@ -425,8 +448,7 @@ struct AddEventView: View {
             type.rateAmount = workRateAmount
             type.pricingMode = workPricingMode
             type.currencyCode = targetCurrency
-            type.defaultStartDate = startDate
-            type.defaultEndDate = endDate
+            persistWorkHours(on: type)
             type.updatedAt = Date()
             selectedWorkTypeId = type.id
         } else {
@@ -434,10 +456,9 @@ struct AddEventView: View {
                 name: cleanedName,
                 rateAmount: workRateAmount,
                 pricingMode: workPricingMode,
-                currencyCode: targetCurrency,
-                defaultStartDate: startDate,
-                defaultEndDate: endDate
+                currencyCode: targetCurrency
             )
+            persistWorkHours(on: type)
             modelContext.insert(type)
             selectedWorkTypeId = type.id
         }
@@ -517,6 +538,49 @@ struct AddEventView: View {
         }
     }
 
+    private func categoryDisplayName(_ category: String) -> LocalizedStringKey {
+        switch category {
+        case "work": return "Work"
+        case "meeting": return "Meeting"
+        case "workout": return "Workout"
+        case "appointment": return "Appointment"
+        case "travel": return "Travel"
+        case "social": return "Social"
+        case "errand": return "Errand"
+        default: return "General"
+        }
+    }
+
+    private var workDayBinding: Binding<Date> {
+        Binding(
+            get: { startDate },
+            set: { newDay in
+                let previousStart = startDate
+                let previousEnd = endDate
+                startDate = combinedDate(day: newDay, time: previousStart)
+                endDate = combinedDate(day: newDay, time: previousEnd)
+                if endDate <= startDate {
+                    endDate = startDate.addingTimeInterval(3600)
+                }
+                if customReminderDate > startDate {
+                    customReminderDate = defaultCustomReminderDate(for: startDate)
+                }
+            }
+        )
+    }
+
+    private func persistWorkHours(on type: WorkType) {
+        let calendar = Calendar.current
+        let startComponents = calendar.dateComponents([.hour, .minute], from: startDate)
+        let endComponents = calendar.dateComponents([.hour, .minute], from: endDate)
+        type.defaultStartHour = startComponents.hour
+        type.defaultStartMinute = startComponents.minute
+        type.defaultEndHour = endComponents.hour
+        type.defaultEndMinute = endComponents.minute
+        type.defaultStartDate = nil
+        type.defaultEndDate = nil
+    }
+
     private func defaultStartDate() -> Date {
         guard let initialDate else { return startDate }
         let calendar = Calendar.current
@@ -529,6 +593,20 @@ struct AddEventView: View {
         components.hour = nowTime.hour
         components.minute = nowTime.minute
         return calendar.date(from: components) ?? initialDate
+    }
+
+    private func combinedDate(day: Date, time: Date) -> Date {
+        let calendar = Calendar.current
+        let dayComponents = calendar.dateComponents([.year, .month, .day], from: day)
+        let timeComponents = calendar.dateComponents([.hour, .minute, .second], from: time)
+        var components = DateComponents()
+        components.year = dayComponents.year
+        components.month = dayComponents.month
+        components.day = dayComponents.day
+        components.hour = timeComponents.hour
+        components.minute = timeComponents.minute
+        components.second = timeComponents.second
+        return calendar.date(from: components) ?? day
     }
 
     private func decimalSeparator() -> String {
