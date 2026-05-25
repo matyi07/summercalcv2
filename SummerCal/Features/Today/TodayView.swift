@@ -14,6 +14,7 @@ struct TodayView: View {
     @State private var lastWeatherFetch: Date = .distantPast
     @State private var selectedSuggestion: ActivitySuggestion?
     @State private var suggestionPreferenceText: String = ""
+    @State private var showAllSuggestions = false
     @FocusState private var suggestionPreferenceFocused: Bool
 
     @Query(sort: \CalendarEvent.startDate) private var allEvents: [CalendarEvent]
@@ -375,17 +376,11 @@ struct TodayView: View {
                 Spacer()
             }
 
-            TextField("Suggestion preferences (optional)", text: $suggestionPreferenceText, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(1...3)
-                .focused($suggestionPreferenceFocused)
-                .submitLabel(.done)
-                .onSubmit {
-                    suggestionPreferenceFocused = false
-                }
+            suggestionPreferenceField
 
             Button {
                 suggestionPreferenceFocused = false
+                showAllSuggestions = false
                 Task {
                     viewModel.isLoadingSuggestions = true
                     viewModel.suggestionError = nil
@@ -417,6 +412,29 @@ struct TodayView: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)).shadow(color: .black.opacity(0.05), radius: 4))
     }
 
+    private var suggestionPreferenceField: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "slider.horizontal.3")
+                .font(.subheadline)
+                .foregroundColor(.orange)
+                .padding(.top, 3)
+
+            TextField("Mood, distance, food, budget, or anything else", text: $suggestionPreferenceText, axis: .vertical)
+                .lineLimit(1...4)
+                .focused($suggestionPreferenceFocused)
+                .submitLabel(.done)
+                .onSubmit {
+                    suggestionPreferenceFocused = false
+                }
+        }
+        .padding(12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(suggestionPreferenceFocused ? Color.orange : Color(.systemGray5), lineWidth: 1)
+        }
+    }
+
     private var freeWindowsSummary: String {
         let totalMin = Int((viewModel.freeWindows.reduce(0.0) { $0 + $1.duration }) / 60.0)
         let h = totalMin / 60
@@ -443,17 +461,31 @@ struct TodayView: View {
 
     private var suggestionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Suggestions")
-                .font(.headline)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(viewModel.suggestions) { suggestion in
-                        suggestionCard(suggestion)
+            HStack {
+                Text("Suggestion")
+                    .font(.headline)
+                Spacer()
+                if viewModel.suggestions.count > 1 {
+                    Button(showAllSuggestions ? "Show Less" : "View More") {
+                        withAnimation {
+                            showAllSuggestions.toggle()
+                        }
                     }
+                    .font(.caption.weight(.medium))
+                    .foregroundColor(.orange)
+                }
+            }
+
+            VStack(spacing: 10) {
+                ForEach(visibleSuggestions) { suggestion in
+                    suggestionCard(suggestion)
                 }
             }
         }
+    }
+
+    private var visibleSuggestions: [ActivitySuggestion] {
+        showAllSuggestions ? viewModel.suggestions : Array(viewModel.suggestions.prefix(1))
     }
 
     private func suggestionCard(_ suggestion: ActivitySuggestion) -> some View {
@@ -485,7 +517,7 @@ struct TodayView: View {
             }
         }
         .padding()
-        .frame(width: 180, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)).shadow(color: .black.opacity(0.05), radius: 4))
         .onTapGesture {
             selectedSuggestion = suggestion

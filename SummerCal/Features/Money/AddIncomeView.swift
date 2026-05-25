@@ -156,6 +156,7 @@ struct AddIncomeView: View {
         case .salary: return "Salary"
         case .freelance: return "Freelance"
         case .gig: return "Gig"
+        case .savings: return "Savings"
         case .other: return "Other"
         }
     }
@@ -165,6 +166,7 @@ struct AddIncomeView: View {
         case .salary: return "building.2"
         case .freelance: return "laptopcomputer"
         case .gig: return "figure.walk"
+        case .savings: return "banknote.fill"
         case .other: return "ellipsis.circle"
         }
     }

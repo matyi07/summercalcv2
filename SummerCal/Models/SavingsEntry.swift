@@ -1,16 +1,8 @@
 import Foundation
 import SwiftData
 
-enum IncomeCategory: String, Codable, CaseIterable {
-    case salary
-    case freelance
-    case gig
-    case savings
-    case other
-}
-
 @Model
-final class IncomeEntry {
+final class SavingsEntry {
     @Attribute(.unique) var id: UUID
     var date: Date
     var amount: Double
@@ -19,23 +11,21 @@ final class IncomeEntry {
     var originalCurrencyCode: String?
     var exchangeRateToEntryCurrency: Double?
     var exchangeRateDate: String?
-    var source: String
-    var descriptionText: String
-    var category: IncomeCategory
+    var goalId: UUID?
+    var note: String
     var createdAt: Date
 
     init(
         id: UUID = UUID(),
-        date: Date,
+        date: Date = Date(),
         amount: Double,
         currencyCode: String? = nil,
         originalAmount: Double? = nil,
         originalCurrencyCode: String? = nil,
         exchangeRateToEntryCurrency: Double? = nil,
         exchangeRateDate: String? = nil,
-        source: String,
-        descriptionText: String = "",
-        category: IncomeCategory = .other,
+        goalId: UUID? = nil,
+        note: String = "",
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -46,9 +36,8 @@ final class IncomeEntry {
         self.originalCurrencyCode = originalCurrencyCode
         self.exchangeRateToEntryCurrency = exchangeRateToEntryCurrency
         self.exchangeRateDate = exchangeRateDate
-        self.source = source
-        self.descriptionText = descriptionText
-        self.category = category
+        self.goalId = goalId
+        self.note = note
         self.createdAt = createdAt
     }
 }

@@ -24,13 +24,13 @@ final class CalendarViewModel {
     }
 
     var daysInMonth: [Date] {
-        guard let monthInterval = calendar.dateInterval(of: .month, for: currentMonth),
-              let monthStart = calendar.startOfMonth(for: currentMonth),
-              let monthEnd = calendar.endOfMonth(for: currentMonth)
+        guard let monthInterval = calendar.dateInterval(of: .month, for: currentMonth)
         else { return [] }
 
+        let monthStart = monthInterval.start
+        let monthEnd = monthInterval.end
         let weekday = calendar.component(.weekday, from: monthStart)
-        let leadingEmpty = weekday - calendar.firstWeekday
+        let leadingEmpty = (weekday - calendar.firstWeekday + 7) % 7
 
         var days: [Date] = []
         if leadingEmpty > 0 {
@@ -73,8 +73,9 @@ final class CalendarViewModel {
               let nextMonth = calendar.date(byAdding: .month, value: 1, to: monthStart) else {
             return []
         }
+        let monthInterval = DateInterval(start: monthStart, end: nextMonth)
         return allEvents.filter { event in
-            event.startDate >= monthStart && event.startDate < nextMonth
+            event.overlaps(monthInterval)
         }.sorted { $0.startDate < $1.startDate }
     }
 
@@ -106,8 +107,8 @@ final class CalendarViewModel {
     }
 
     func hasEvents(_ date: Date) -> Bool {
-        let day = calendar.startOfDay(for: date)
-        return allEvents.contains { calendar.isDate($0.startDate, inSameDayAs: day) }
+        let interval = dayInterval(for: date)
+        return allEvents.contains { $0.overlaps(interval) }
     }
 
     func hasWorkSession(_ date: Date) -> Bool {
@@ -120,15 +121,17 @@ final class CalendarViewModel {
         let activeStart = calendar.date(bySettingHour: 6, minute: 0, second: 0, of: day)!
         let activeEnd = calendar.date(bySettingHour: 22, minute: 0, second: 0, of: day)!
 
-        let dayEvents = allEvents.filter { calendar.isDate($0.startDate, inSameDayAs: day) }
+        let fullDay = dayInterval(for: day)
+        let dayEvents = allEvents.filter { $0.overlaps(fullDay) }
 
         if dayEvents.isEmpty {
             return .green
         }
 
-        // All-day events fill the entire active window
-        let hasAllDayEvent = dayEvents.contains { $0.isAllDay }
-        if hasAllDayEvent {
+        let hasBusyDayEvent = dayEvents.contains { event in
+            event.isAllDay || (event.startDate <= activeStart && event.endDate >= activeEnd)
+        }
+        if hasBusyDayEvent {
             return .red
         }
 
@@ -155,15 +158,13 @@ final class CalendarViewModel {
         if totalActive <= 0 || dayEvents.isEmpty { return .green }
         let freeRatio = totalFree / totalActive
 
-        if freeRatio >= 0.6 { return .green }
-        if freeRatio >= 0.3 { return .yellow }
-        return .red
+        return freeRatio >= 0.3 ? .yellow : .red
     }
 
     func updateEventsForSelectedDay() {
-        let day = calendar.startOfDay(for: selectedDay)
+        let day = dayInterval(for: selectedDay)
         eventsOnSelectedDay = allEvents.filter { event in
-            calendar.isDate(event.startDate, inSameDayAs: day)
+            event.overlaps(day)
         }.sorted { $0.startDate < $1.startDate }
     }
 
@@ -174,6 +175,12 @@ final class CalendarViewModel {
 
     func refreshWorkSessions(with sessions: [WorkSession]) {
         allWorkSessions = sessions
+    }
+
+    private func dayInterval(for date: Date) -> DateInterval {
+        let start = calendar.startOfDay(for: date)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86_400)
+        return DateInterval(start: start, end: end)
     }
 }
 

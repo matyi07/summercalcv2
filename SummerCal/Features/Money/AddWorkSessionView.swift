@@ -11,6 +11,7 @@ struct AddWorkSessionView: View {
     @State private var startTime: Date = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
     @State private var endTime: Date = Calendar.current.date(bySettingHour: 17, minute: 0, second: 0, of: Date()) ?? Date()
     @State private var hourlyRateText: String = ""
+    @State private var pricingMode: String = "hourly"
     @State private var note: String = ""
     @State private var rateErrorTrigger: Bool = false
     @State private var saveError: String?
@@ -24,16 +25,18 @@ struct AddWorkSessionView: View {
         return Double(cleaned) ?? 0
     }
 
+    private var rateAmount: Double { hourlyRate }
+
     private var durationHours: Double {
         max(endTime.timeIntervalSince(startTime) / 3600, 0)
     }
 
     private var estimatedEarnings: Double {
-        durationHours * hourlyRate
+        pricingMode == "daily" ? rateAmount : durationHours * rateAmount
     }
 
     private var isValid: Bool {
-        hourlyRate > 0 && endTime > startTime
+        rateAmount > 0 && endTime > startTime
     }
 
     private var currencyCode: String {
@@ -53,10 +56,16 @@ struct AddWorkSessionView: View {
                 }
 
                 Section {
+                    Picker("Pricing", selection: $pricingMode) {
+                        Label("Hourly", systemImage: "clock").tag("hourly")
+                        Label("Daily", systemImage: "calendar").tag("daily")
+                    }
+                    .pickerStyle(.segmented)
+
                     HStack {
                         Text(currencyCode)
                             .foregroundStyle(Color(.systemGray))
-                        TextField("Hourly Rate", text: $hourlyRateText)
+                        TextField(pricingMode == "daily" ? "Daily Rate" : "Hourly Rate", text: $hourlyRateText)
                             .keyboardType(.decimalPad)
                             .onChange(of: hourlyRateText) { _, newValue in
                                 let cleaned = newValue.replacingOccurrences(of: ",", with: ".")
@@ -118,6 +127,7 @@ struct AddWorkSessionView: View {
                     date = session.date
                     startTime = session.startTime
                     endTime = session.endTime
+                    pricingMode = session.pricingMode ?? "hourly"
                     hourlyRateText = String(format: "%.2f", session.hourlyRate).replacingOccurrences(of: ".", with: decimalSeparator())
                     note = session.descriptionText
                     if session.currencyCode == nil {
@@ -151,24 +161,26 @@ struct AddWorkSessionView: View {
 
     private func save() {
         let duration = endTime.timeIntervalSince(startTime) / 3600
-        let earned = duration * hourlyRate
+        let earned = pricingMode == "daily" ? rateAmount : duration * rateAmount
 
         if let session = existingSession {
             session.date = date
             session.startTime = startTime
             session.endTime = endTime
-            session.hourlyRate = hourlyRate
+            session.hourlyRate = rateAmount
             session.totalEarned = earned
             session.currencyCode = session.currencyCode ?? currencyCode
+            session.pricingMode = pricingMode
             session.descriptionText = note
         } else {
             let session = WorkSession(
                 date: date,
                 startTime: startTime,
                 endTime: endTime,
-                hourlyRate: hourlyRate,
+                hourlyRate: rateAmount,
                 totalEarned: earned,
                 currencyCode: currencyCode,
+                pricingMode: pricingMode,
                 descriptionText: note
             )
             modelContext.insert(session)

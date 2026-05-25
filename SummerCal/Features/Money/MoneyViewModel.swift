@@ -7,18 +7,26 @@ final class MoneyViewModel {
     var incomeEntries: [IncomeEntry] = []
     var expenseEntries: [ExpenseEntry] = []
     var workSessions: [WorkSession] = []
+    var savingsEntries: [SavingsEntry] = []
+    var savingsGoals: [SavingsGoal] = []
+    var savingsIncomeEntries: [IncomeEntry] = []
     var monthlyGoal: Double = 0
     var currencyCode: String = "USD"
     var entryPreviewLimit: Int = 5
     var incomeDisplayAmounts: [UUID: Double] = [:]
     var expenseDisplayAmounts: [UUID: Double] = [:]
     var workDisplayAmounts: [UUID: Double] = [:]
+    var savingsDisplayAmounts: [UUID: Double] = [:]
+    var savingsIncomeDisplayAmounts: [UUID: Double] = [:]
+    var savingsGoalDisplayTargets: [UUID: Double] = [:]
     var currencyConversionError: String?
 
     private let currencyConverter = CurrencyConversionService()
 
     var totalIncome: Double {
-        incomeEntries.reduce(0) { $0 + displayAmount(for: $1) }
+        incomeEntries
+            .filter { $0.category != .savings }
+            .reduce(0) { $0 + displayAmount(for: $1) }
     }
 
     var totalExpenses: Double {
@@ -33,13 +41,25 @@ final class MoneyViewModel {
         totalIncome + totalWorkEarnings
     }
 
-    var netBalance: Double {
+    var spendableBalance: Double {
         totalGross - totalExpenses
+    }
+
+    var totalSavingsBalance: Double {
+        let accountSavings = savingsEntries.reduce(0) { $0 + displayAmount(for: $1) }
+        let incomeSavings = savingsIncomeEntries.reduce(0) {
+            $0 + (savingsIncomeDisplayAmounts[$1.id] ?? $1.amount)
+        }
+        return accountSavings + incomeSavings
+    }
+
+    var netBalance: Double {
+        spendableBalance + totalSavingsBalance
     }
 
     var goalProgress: Double {
         guard monthlyGoal > 0 else { return 0 }
-        return min(netBalance / monthlyGoal, 1.0)
+        return min(spendableBalance / monthlyGoal, 1.0)
     }
 
     var dailyAverage: Double {
@@ -50,7 +70,7 @@ final class MoneyViewModel {
 
         let isCurrentMonth = calendar.isDate(selectedMonth, equalTo: Date(), toGranularity: .month)
         let elapsedDays = isCurrentMonth ? max(dayOfMonth, 1) : daysInMonth
-        return netBalance / Double(elapsedDays)
+        return spendableBalance / Double(elapsedDays)
     }
 
     var monthLabel: String {
@@ -63,12 +83,45 @@ final class MoneyViewModel {
         monthlyGoal > 0 ? formatCurrency(monthlyGoal) : "Not set"
     }
 
+    var spendableIncomeEntries: [IncomeEntry] {
+        incomeEntries.filter { $0.category != .savings }
+    }
+
     var recentIncomeEntries: [IncomeEntry] {
-        Array(incomeEntries.prefix(entryPreviewLimit))
+        Array(spendableIncomeEntries.prefix(entryPreviewLimit))
     }
 
     var recentExpenseEntries: [ExpenseEntry] {
         Array(expenseEntries.prefix(entryPreviewLimit))
+    }
+
+    var recentSavingsEntries: [SavingsEntry] {
+        Array(savingsEntries.prefix(entryPreviewLimit))
+    }
+
+    var activeSavingsGoals: [SavingsGoal] {
+        savingsGoals.filter { !$0.archived }
+    }
+
+    var totalSavingsGoalTarget: Double {
+        activeSavingsGoals.reduce(0) { $0 + displayTarget(for: $1) }
+    }
+
+    var allocatedSavings: Double {
+        activeSavingsGoals.reduce(0) { $0 + allocatedAmount(for: $1) }
+    }
+
+    var remainingSavingsNeeded: Double {
+        max(totalSavingsGoalTarget - allocatedSavings, 0)
+    }
+
+    var savingsGoalProgress: Double {
+        guard totalSavingsGoalTarget > 0 else { return 0 }
+        return min(allocatedSavings / totalSavingsGoalTarget, 1)
+    }
+
+    var unassignedSavingsBalance: Double {
+        totalSavingsBalance - allocatedSavings
     }
 
     var upcomingWorkSessions: [WorkSession] {
@@ -111,6 +164,10 @@ final class MoneyViewModel {
         )
         incomeEntries = (try? modelContext.fetch(incomeDescriptor)) ?? []
 
+        let allIncomeDescriptor = FetchDescriptor<IncomeEntry>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        let allIncomeEntries = (try? modelContext.fetch(allIncomeDescriptor)) ?? []
+        savingsIncomeEntries = allIncomeEntries.filter { $0.category == .savings }
+
         let expenseDescriptor = FetchDescriptor<ExpenseEntry>(
             predicate: #Predicate { entry in
                 entry.date >= startOfMonth && entry.date < endOfMonth
@@ -127,9 +184,18 @@ final class MoneyViewModel {
         )
         workSessions = (try? modelContext.fetch(workDescriptor)) ?? []
 
+        let savingsDescriptor = FetchDescriptor<SavingsEntry>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        savingsEntries = (try? modelContext.fetch(savingsDescriptor)) ?? []
+
+        let goalsDescriptor = FetchDescriptor<SavingsGoal>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        savingsGoals = (try? modelContext.fetch(goalsDescriptor)) ?? []
+
         incomeDisplayAmounts = Dictionary(uniqueKeysWithValues: incomeEntries.map { ($0.id, $0.amount) })
         expenseDisplayAmounts = Dictionary(uniqueKeysWithValues: expenseEntries.map { ($0.id, $0.amount) })
         workDisplayAmounts = Dictionary(uniqueKeysWithValues: workSessions.map { ($0.id, $0.totalEarned) })
+        savingsDisplayAmounts = Dictionary(uniqueKeysWithValues: savingsEntries.map { ($0.id, $0.amount) })
+        savingsIncomeDisplayAmounts = Dictionary(uniqueKeysWithValues: savingsIncomeEntries.map { ($0.id, $0.amount) })
+        savingsGoalDisplayTargets = Dictionary(uniqueKeysWithValues: savingsGoals.map { ($0.id, $0.targetAmount) })
         currencyConversionError = nil
     }
 
@@ -159,6 +225,30 @@ final class MoneyViewModel {
                 fallbackCurrency: currencyCode
             )
         }
+
+        for entry in savingsEntries {
+            savingsDisplayAmounts[entry.id] = await convertedAmount(
+                entry.amount,
+                from: entry.currencyCode,
+                fallbackCurrency: currencyCode
+            )
+        }
+
+        for entry in savingsIncomeEntries {
+            savingsIncomeDisplayAmounts[entry.id] = await convertedAmount(
+                entry.amount,
+                from: entry.currencyCode,
+                fallbackCurrency: currencyCode
+            )
+        }
+
+        for goal in savingsGoals {
+            savingsGoalDisplayTargets[goal.id] = await convertedAmount(
+                goal.targetAmount,
+                from: goal.currencyCode,
+                fallbackCurrency: currencyCode
+            )
+        }
     }
 
     func deleteIncomeEntry(_ entry: IncomeEntry, modelContext: ModelContext) {
@@ -177,6 +267,21 @@ final class MoneyViewModel {
         modelContext.delete(session)
         try? modelContext.save()
         workSessions.removeAll { $0.id == session.id }
+    }
+
+    func deleteSavingsEntry(_ entry: SavingsEntry, modelContext: ModelContext) {
+        modelContext.delete(entry)
+        try? modelContext.save()
+        savingsEntries.removeAll { $0.id == entry.id }
+    }
+
+    func deleteSavingsGoal(_ goal: SavingsGoal, modelContext: ModelContext) {
+        for entry in savingsEntries where entry.goalId == goal.id {
+            entry.goalId = nil
+        }
+        modelContext.delete(goal)
+        try? modelContext.save()
+        savingsGoals.removeAll { $0.id == goal.id }
     }
 
     func navigateMonth(by offset: Int) {
@@ -244,8 +349,43 @@ final class MoneyViewModel {
         case .salary: return "Salary"
         case .freelance: return "Freelance"
         case .gig: return "Gig"
+        case .savings: return "Savings"
         case .other: return "Other"
         }
+    }
+
+    func displayAmount(for entry: SavingsEntry) -> Double {
+        savingsDisplayAmounts[entry.id] ?? entry.amount
+    }
+
+    func displayTarget(for goal: SavingsGoal) -> Double {
+        savingsGoalDisplayTargets[goal.id] ?? goal.targetAmount
+    }
+
+    func allocatedAmount(for goal: SavingsGoal) -> Double {
+        savingsEntries
+            .filter { $0.goalId == goal.id }
+            .reduce(0) { $0 + displayAmount(for: $1) }
+    }
+
+    func remainingAmount(for goal: SavingsGoal) -> Double {
+        max(displayTarget(for: goal) - allocatedAmount(for: goal), 0)
+    }
+
+    func progress(for goal: SavingsGoal) -> Double {
+        let target = displayTarget(for: goal)
+        guard target > 0 else { return 0 }
+        return min(allocatedAmount(for: goal) / target, 1)
+    }
+
+    func goalName(for id: UUID?) -> String {
+        guard let id else { return "Unassigned" }
+        return savingsGoals.first(where: { $0.id == id })?.name ?? "Deleted Goal"
+    }
+
+    func workRateLabel(for session: WorkSession) -> String {
+        let rate = formatCurrency(session.hourlyRate, currency: session.currencyCode ?? currencyCode)
+        return session.usesDailyPricing ? "\(rate)/day" : "\(rate)/h"
     }
 
     private func convertedAmount(_ amount: Double, from sourceCurrency: String?, fallbackCurrency: String) async -> Double {

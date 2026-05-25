@@ -95,7 +95,7 @@ enum PromptBuilder {
         nearbyPlaces: [PlaceCandidate],
         preferences: [String]
     ) -> String {
-        var prompt = "You are a helpful personal assistant. Based on the following context, suggest 3-5 specific, realistic activities for the user's free time today.\n\n"
+        var prompt = "You are a helpful personal assistant. Based on the following context, suggest exactly 3 specific, realistic activities for the user's free time today.\n\n"
         prompt += "Date: \(date)\n"
         
         if todaysEvents.isEmpty {
@@ -137,7 +137,7 @@ enum PromptBuilder {
             prompt += "User preferences: \(preferences.joined(separator: ", "))\n"
         }
         
-        prompt += "\nReturn your response as a JSON array of activity suggestions. Each suggestion must have these fields:\n"
+        prompt += "\nReturn your response as a JSON array of exactly 3 activity suggestions. Each suggestion must have these fields:\n"
         prompt += "- title: string (short, catchy activity name)\n"
         prompt += "- summary: string (1-2 sentence description)\n"
         prompt += "- category: string (one of: outdoor, indoor, fitness, social, food, culture, errand, leisure)\n"

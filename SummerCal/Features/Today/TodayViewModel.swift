@@ -63,8 +63,9 @@ final class TodayViewModel {
 
         let allEventsDescriptor = FetchDescriptor<CalendarEvent>(sortBy: [SortDescriptor(\.startDate)])
         if let allEvents = try? modelContext.fetch(allEventsDescriptor) {
+            let todayInterval = DateInterval(start: startOfDay, end: endOfDay)
             todaysEvents = allEvents.filter { event in
-                event.startDate >= startOfDay && event.startDate < endOfDay
+                event.overlaps(todayInterval)
             }
         }
 
@@ -211,7 +212,7 @@ final class TodayViewModel {
                 AIMessage(role: "user", content: prompt)
             ]
             let response = try await client.sendChat(messages: messages, config: config)
-            let parsed = parseSuggestionJSON(response.content)
+            let parsed = Array(parseSuggestionJSON(response.content).prefix(3))
 
             for old in suggestions {
                 modelContext.delete(old)
@@ -288,11 +289,13 @@ final class TodayViewModel {
         var gaps: [DateInterval] = []
         var cursor = startOfDay
         for event in todaysEvents.sorted(by: { $0.startDate < $1.startDate }) {
-            if event.startDate > cursor {
-                gaps.append(DateInterval(start: cursor, end: event.startDate))
+            let eventStart = event.isAllDay ? startOfDay : max(event.startDate, startOfDay)
+            let eventEnd = event.isAllDay ? endOfDay : min(event.endDate, endOfDay)
+            if eventStart > cursor {
+                gaps.append(DateInterval(start: cursor, end: eventStart))
             }
-            if event.endDate > cursor {
-                cursor = event.endDate
+            if eventEnd > cursor {
+                cursor = eventEnd
             }
         }
         if cursor < endOfDay {
@@ -340,7 +343,7 @@ final class TodayViewModel {
 
         let converter = CurrencyConversionService()
         var entryTotal = 0.0
-        for entry in entries where entry.date >= monthStart {
+        for entry in entries where entry.date >= monthStart && entry.category != .savings {
             entryTotal += await convertedAmount(entry.amount, from: entry.currencyCode, to: targetCurrency, converter: converter)
         }
 

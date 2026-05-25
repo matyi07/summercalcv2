@@ -7,12 +7,17 @@ struct MoneyView: View {
     @State private var showAddIncome: Bool = false
     @State private var showAddExpense: Bool = false
     @State private var showAddWork: Bool = false
+    @State private var showAddSavingsEntry: Bool = false
+    @State private var showAddSavingsGoal: Bool = false
     @State private var editIncome: IncomeEntry?
     @State private var editExpense: ExpenseEntry?
     @State private var editSession: WorkSession?
+    @State private var editSavingsEntry: SavingsEntry?
+    @State private var editSavingsGoal: SavingsGoal?
     @State private var showAllIncome: Bool = false
     @State private var showAllExpenses: Bool = false
     @State private var showAllWorkSessions: Bool = false
+    @State private var showAllSavings: Bool = false
 
     var body: some View {
         List {
@@ -22,9 +27,11 @@ struct MoneyView: View {
                 goalProgressSection
             }
 
+            savingsOverviewSection
+
             Section {
                 HStack {
-                    Text("Daily Average")
+                    Text("Spendable Daily Average")
                     Spacer()
                     Text(viewModel.formatCurrency(viewModel.dailyAverage))
                         .fontWeight(.semibold)
@@ -32,7 +39,7 @@ struct MoneyView: View {
                 HStack {
                     Text("Entries")
                     Spacer()
-                    Text("\(viewModel.incomeEntries.count + viewModel.expenseEntries.count)")
+                    Text("\(viewModel.spendableIncomeEntries.count + viewModel.expenseEntries.count)")
                         .foregroundStyle(Color(.systemGray))
                 }
                 HStack {
@@ -44,7 +51,7 @@ struct MoneyView: View {
             }
 
             Section {
-                if viewModel.incomeEntries.isEmpty {
+                if viewModel.spendableIncomeEntries.isEmpty {
                     ContentUnavailableView(
                         "No Income Entries",
                         systemImage: "banknote",
@@ -66,7 +73,7 @@ struct MoneyView: View {
                     }
                     moreButton(
                         isShowingAll: $showAllIncome,
-                        totalCount: viewModel.incomeEntries.count,
+                        totalCount: viewModel.spendableIncomeEntries.count,
                         defaultCount: viewModel.recentIncomeEntries.count,
                         label: "income entries"
                     )
@@ -79,6 +86,8 @@ struct MoneyView: View {
                 }
             } header: {
                 Text("Income")
+            } footer: {
+                Text("Income categorized as Savings is excluded from spendable monthly statistics and counted in the savings balance.")
             }
 
             Section {
@@ -210,6 +219,16 @@ struct MoneyView: View {
                 reloadMoney()
             }
         }
+        .sheet(isPresented: $showAddSavingsEntry) {
+            AddSavingsEntryView(existingEntry: editSavingsEntry, goals: viewModel.activeSavingsGoals) {
+                reloadMoney()
+            }
+        }
+        .sheet(isPresented: $showAddSavingsGoal) {
+            AddSavingsGoalView(existingGoal: editSavingsGoal) {
+                reloadMoney()
+            }
+        }
     }
 
     private func reloadMoney() {
@@ -221,7 +240,7 @@ struct MoneyView: View {
     }
 
     private var visibleIncomeEntries: [IncomeEntry] {
-        showAllIncome ? viewModel.incomeEntries : viewModel.recentIncomeEntries
+        showAllIncome ? viewModel.spendableIncomeEntries : viewModel.recentIncomeEntries
     }
 
     private var visibleExpenseEntries: [ExpenseEntry] {
@@ -232,10 +251,15 @@ struct MoneyView: View {
         showAllWorkSessions ? viewModel.workSessions : viewModel.upcomingWorkSessions
     }
 
+    private var visibleSavingsEntries: [SavingsEntry] {
+        showAllSavings ? viewModel.savingsEntries : viewModel.recentSavingsEntries
+    }
+
     private func resetSectionExpansion() {
         showAllIncome = false
         showAllExpenses = false
         showAllWorkSessions = false
+        showAllSavings = false
     }
 
     @ViewBuilder
@@ -304,8 +328,19 @@ struct MoneyView: View {
                             .font(.title)
                             .fontWeight(.bold)
                             .foregroundStyle(viewModel.netBalance >= 0 ? Color.green.gradient : Color.red.gradient)
+                        Text("Spendable + savings")
+                            .font(.caption2)
+                            .foregroundStyle(Color(.systemGray))
                     }
                     Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Spendable")
+                            .font(.caption)
+                            .foregroundStyle(Color(.systemGray))
+                        Text(viewModel.formatCurrency(viewModel.spendableBalance))
+                            .font(.headline)
+                            .foregroundColor(viewModel.spendableBalance >= 0 ? .blue : .red)
+                    }
                 }
 
                 if let error = viewModel.currencyConversionError {
@@ -350,9 +385,120 @@ struct MoneyView: View {
                             .foregroundColor(.blue)
                     }
                     Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Savings")
+                            .font(.caption2)
+                            .foregroundStyle(Color(.systemGray))
+                        Text(viewModel.formatCurrency(viewModel.totalSavingsBalance))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.purple)
+                    }
                 }
             }
             .padding(.vertical, 8)
+        }
+    }
+
+    private var savingsOverviewSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Savings Account")
+                            .font(.headline)
+                        Text(viewModel.formatCurrency(viewModel.totalSavingsBalance))
+                            .font(.title3.weight(.semibold))
+                            .foregroundColor(.purple)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Needed")
+                            .font(.caption)
+                            .foregroundStyle(Color(.systemGray))
+                        Text(viewModel.formatCurrency(viewModel.remainingSavingsNeeded))
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+
+                if viewModel.totalSavingsGoalTarget > 0 {
+                    ProgressView(value: viewModel.savingsGoalProgress)
+                        .tint(.purple)
+                    Text("\(Int(viewModel.savingsGoalProgress * 100))% funded across \(viewModel.activeSavingsGoals.count) goal\(viewModel.activeSavingsGoals.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(Color(.systemGray))
+                } else {
+                    Text("Create goals for trips, gear, emergency funds, or anything with a price.")
+                        .font(.caption)
+                        .foregroundStyle(Color(.systemGray))
+                }
+
+                if viewModel.unassignedSavingsBalance != 0 {
+                    Label("Unassigned: \(viewModel.formatCurrency(viewModel.unassignedSavingsBalance))", systemImage: "tray")
+                        .font(.caption)
+                        .foregroundStyle(Color(.systemGray))
+                }
+            }
+            .padding(.vertical, 4)
+
+            if !viewModel.activeSavingsGoals.isEmpty {
+                ForEach(viewModel.activeSavingsGoals) { goal in
+                    savingsGoalRow(goal)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            editSavingsGoal = goal
+                            showAddSavingsGoal = true
+                        }
+                }
+                .onDelete { offsets in
+                    let goals = viewModel.activeSavingsGoals
+                    for idx in offsets {
+                        viewModel.deleteSavingsGoal(goals[idx], modelContext: modelContext)
+                    }
+                }
+            }
+
+            if !viewModel.savingsEntries.isEmpty {
+                ForEach(visibleSavingsEntries) { entry in
+                    savingsEntryRow(entry)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            editSavingsEntry = entry
+                            showAddSavingsEntry = true
+                        }
+                }
+                .onDelete { offsets in
+                    for idx in offsets {
+                        viewModel.deleteSavingsEntry(visibleSavingsEntries[idx], modelContext: modelContext)
+                    }
+                }
+                moreButton(
+                    isShowingAll: $showAllSavings,
+                    totalCount: viewModel.savingsEntries.count,
+                    defaultCount: viewModel.recentSavingsEntries.count,
+                    label: "savings entries"
+                )
+            }
+
+            HStack {
+                Button {
+                    editSavingsEntry = nil
+                    showAddSavingsEntry = true
+                } label: {
+                    Label("Add Savings", systemImage: "plus.circle")
+                }
+
+                Spacer()
+
+                Button {
+                    editSavingsGoal = nil
+                    showAddSavingsGoal = true
+                } label: {
+                    Label("Add Goal", systemImage: "target")
+                }
+            }
+        } header: {
+            Text("Savings")
         }
     }
 
@@ -364,7 +510,7 @@ struct MoneyView: View {
                         .font(.caption)
                         .foregroundStyle(Color(.systemGray))
                     Spacer()
-                    Text("\(viewModel.formatCurrency(viewModel.netBalance)) / \(viewModel.formattedGoal)")
+                    Text("\(viewModel.formatCurrency(viewModel.spendableBalance)) / \(viewModel.formattedGoal)")
                         .font(.caption)
                         .fontWeight(.medium)
                 }
@@ -498,7 +644,7 @@ struct MoneyView: View {
                 HStack(spacing: 4) {
                     Text(viewModel.formatDuration(session))
                         .font(.caption)
-                    Text("at \(viewModel.formatCurrency(session.hourlyRate, currency: session.currencyCode ?? viewModel.currencyCode))/h")
+                    Text("at \(viewModel.workRateLabel(for: session))")
                         .font(.caption)
                         .foregroundStyle(Color(.systemGray))
                 }
@@ -534,8 +680,83 @@ struct MoneyView: View {
         case .salary: return "building.2"
         case .freelance: return "laptopcomputer"
         case .gig: return "figure.walk"
+        case .savings: return "banknote.fill"
         case .other: return "ellipsis.circle"
         }
+    }
+
+    private func savingsGoalRow(_ goal: SavingsGoal) -> some View {
+        let progress = viewModel.progress(for: goal)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: goal.iconName)
+                    .font(.title3)
+                    .frame(width: 32, height: 32)
+                    .background(.purple.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+                    .foregroundColor(.purple)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(goal.name)
+                        .font(.body.weight(.medium))
+                    Text("\(viewModel.formatCurrency(viewModel.allocatedAmount(for: goal))) of \(viewModel.formatCurrency(viewModel.displayTarget(for: goal)))")
+                        .font(.caption)
+                        .foregroundStyle(Color(.systemGray))
+                }
+
+                Spacer()
+
+                Text("\(Int(progress * 100))%")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.purple)
+            }
+
+            ProgressView(value: progress)
+                .tint(.purple)
+
+            if viewModel.remainingAmount(for: goal) > 0 {
+                Text("\(viewModel.formatCurrency(viewModel.remainingAmount(for: goal))) still needed")
+                    .font(.caption2)
+                    .foregroundStyle(Color(.systemGray))
+            } else {
+                Label("Funded", systemImage: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundColor(.green)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func savingsEntryRow(_ entry: SavingsEntry) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: entry.amount >= 0 ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                .font(.title3)
+                .frame(width: 32, height: 32)
+                .background(.purple.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .foregroundColor(entry.amount >= 0 ? .purple : .orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(viewModel.goalName(for: entry.goalId))
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                if !entry.note.isEmpty {
+                    Text(entry.note)
+                        .font(.caption)
+                        .foregroundStyle(Color(.systemGray))
+                        .lineLimit(1)
+                }
+                Text(viewModel.formatDate(entry.date))
+                    .font(.caption2)
+                    .foregroundStyle(Color(.systemGray3))
+            }
+
+            Spacer()
+
+            Text(viewModel.formatCurrency(viewModel.displayAmount(for: entry)))
+                .font(.body.weight(.semibold))
+                .foregroundColor(entry.amount >= 0 ? .purple : .orange)
+        }
+        .padding(.vertical, 2)
+        .frame(minHeight: 44)
     }
 
     private func paymentIcon(_ method: String) -> String {

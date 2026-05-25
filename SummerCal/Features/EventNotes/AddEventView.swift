@@ -7,6 +7,12 @@ struct AddEventView: View {
     @Environment(\.dismiss) private var dismiss
 
     var existingEvent: CalendarEvent?
+    var initialDate: Date?
+
+    init(existingEvent: CalendarEvent? = nil, initialDate: Date? = nil) {
+        self.existingEvent = existingEvent
+        self.initialDate = initialDate
+    }
 
     @State private var title: String = ""
     @State private var startDate: Date = Date()
@@ -117,7 +123,6 @@ struct AddEventView: View {
                             DatePicker(
                                 "Reminder",
                                 selection: $customReminderDate,
-                                in: customReminderRange,
                                 displayedComponents: [.date, .hourAndMinute]
                             )
                             if customReminderDate > startDate {
@@ -148,6 +153,9 @@ struct AddEventView: View {
             }
             .onAppear {
                 if existingEvent == nil {
+                    let seedStart = defaultStartDate()
+                    startDate = seedStart
+                    endDate = seedStart.addingTimeInterval(3600)
                     customReminderDate = defaultCustomReminderDate(for: startDate)
                     checkNotificationPermission()
                 }
@@ -291,12 +299,6 @@ struct AddEventView: View {
         return max(soon, start.addingTimeInterval(-30 * 60))
     }
 
-    private var customReminderRange: ClosedRange<Date> {
-        let lower = Date()
-        let upper = max(startDate, lower)
-        return lower...upper
-    }
-
     private func iconForCategory(_ category: String) -> String {
         switch category {
         case "meeting": return "person.2"
@@ -307,5 +309,19 @@ struct AddEventView: View {
         case "errand": return "cart"
         default: return "calendar"
         }
+    }
+
+    private func defaultStartDate() -> Date {
+        guard let initialDate else { return startDate }
+        let calendar = Calendar.current
+        let day = calendar.dateComponents([.year, .month, .day], from: initialDate)
+        let nowTime = calendar.dateComponents([.hour, .minute], from: Date())
+        var components = DateComponents()
+        components.year = day.year
+        components.month = day.month
+        components.day = day.day
+        components.hour = nowTime.hour
+        components.minute = nowTime.minute
+        return calendar.date(from: components) ?? initialDate
     }
 }

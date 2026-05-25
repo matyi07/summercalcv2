@@ -10,6 +10,7 @@ final class WorkSession {
     var hourlyRate: Double
     var totalEarned: Double
     var currencyCode: String?
+    var pricingMode: String?
     var descriptionText: String
     var createdAt: Date
 
@@ -21,6 +22,7 @@ final class WorkSession {
         hourlyRate: Double,
         totalEarned: Double = 0,
         currencyCode: String? = nil,
+        pricingMode: String? = "hourly",
         descriptionText: String = "",
         createdAt: Date = Date()
     ) {
@@ -31,7 +33,12 @@ final class WorkSession {
         self.hourlyRate = hourlyRate
         self.totalEarned = totalEarned
         self.currencyCode = currencyCode
+        self.pricingMode = pricingMode
         self.descriptionText = descriptionText
         self.createdAt = createdAt
+    }
+
+    var usesDailyPricing: Bool {
+        pricingMode == "daily"
     }
 }

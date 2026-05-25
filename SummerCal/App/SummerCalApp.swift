@@ -18,6 +18,8 @@ struct SummerCalApp: App {
             PlaceCandidate.self,
             IncomeEntry.self,
             ExpenseEntry.self,
+            SavingsEntry.self,
+            SavingsGoal.self,
             WorkSession.self,
             UserSettings.self,
         ])

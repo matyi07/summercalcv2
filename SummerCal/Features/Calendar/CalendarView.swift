@@ -43,7 +43,7 @@ struct CalendarView: View {
         }
         .sheet(isPresented: $showAddEvent) {
             NavigationStack {
-                AddEventView()
+                AddEventView(initialDate: viewModel.selectedDay)
             }
         }
         .sheet(item: $editEvent) { event in
@@ -150,6 +150,22 @@ struct CalendarView: View {
             }
         }
         .padding(.horizontal, 8)
+        .gesture(monthSwipeGesture)
+    }
+
+    private var monthSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 35)
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height),
+                      abs(value.translation.width) > 60 else { return }
+                withAnimation {
+                    if value.translation.width < 0 {
+                        viewModel.goToNextMonth()
+                    } else {
+                        viewModel.goToPreviousMonth()
+                    }
+                }
+            }
     }
 
     private func dayCell(_ date: Date) -> some View {
