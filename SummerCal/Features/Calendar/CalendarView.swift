@@ -19,11 +19,11 @@ struct CalendarView: View {
         VStack(spacing: 0) {
             monthHeader
 
+            eventScopePicker
+
             weekdayHeadersRow
 
             colorLegend
-
-            eventScopePicker
 
             monthGrid
 

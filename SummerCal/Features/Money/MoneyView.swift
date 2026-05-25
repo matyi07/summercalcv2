@@ -480,22 +480,28 @@ struct MoneyView: View {
                 )
             }
 
-            HStack {
+            HStack(spacing: 12) {
                 Button {
                     editSavingsEntry = nil
                     showAddSavingsEntry = true
                 } label: {
                     Label("Add Savings", systemImage: "plus.circle")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 8))
                 }
-
-                Spacer()
+                .buttonStyle(.borderless)
 
                 Button {
                     editSavingsGoal = nil
                     showAddSavingsGoal = true
                 } label: {
                     Label("Add Goal", systemImage: "target")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 8))
                 }
+                .buttonStyle(.borderless)
             }
         } header: {
             Text("Savings")
