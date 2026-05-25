@@ -29,7 +29,7 @@ struct WorkTypeSelectionSection: View {
     }
 
     var body: some View {
-        Section("Work Type") {
+        Section {
             Picker("Saved Type", selection: $selectedWorkTypeId) {
                 Text("Custom").tag(nil as UUID?)
                 ForEach(workTypes) { type in
@@ -81,6 +81,8 @@ struct WorkTypeSelectionSection: View {
                 }
             }
             .font(.caption.weight(.medium))
+        } header: {
+            Text("Work Type")
         } footer: {
             Text("Saved work types can be reused in Calendar work events and Money work sessions.")
         }
