@@ -67,6 +67,12 @@ struct AddSavingsEntryView: View {
                             Label(goal.name, systemImage: goal.iconName).tag(Optional(goal.id))
                         }
                     }
+                    .onChange(of: selectedGoalId) { _, goalId in
+                        guard existingEntry == nil,
+                              let goalId,
+                              let goal = goals.first(where: { $0.id == goalId }) else { return }
+                        currencyCode = goal.currencyCode ?? defaultCurrency
+                    }
                 }
 
                 Section("Note") {

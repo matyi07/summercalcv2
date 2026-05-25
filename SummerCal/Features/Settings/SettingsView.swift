@@ -43,7 +43,7 @@ struct SettingsView: View {
                 }
             }
         } message: {
-            Text("This will permanently delete all your calendar events, settings, income entries, work sessions, weather data, places, activity suggestions, and notifications. This action cannot be undone.")
+            Text("This will permanently delete all your calendar events, settings, income entries, work sessions, work types, weather data, places, activity suggestions, and notifications. This action cannot be undone.")
         }
     }
 

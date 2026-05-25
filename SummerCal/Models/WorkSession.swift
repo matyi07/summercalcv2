@@ -11,6 +11,9 @@ final class WorkSession {
     var totalEarned: Double
     var currencyCode: String?
     var pricingMode: String?
+    var calendarEventId: UUID?
+    var workTypeId: UUID?
+    var workTypeName: String?
     var descriptionText: String
     var createdAt: Date
 
@@ -23,6 +26,9 @@ final class WorkSession {
         totalEarned: Double = 0,
         currencyCode: String? = nil,
         pricingMode: String? = "hourly",
+        calendarEventId: UUID? = nil,
+        workTypeId: UUID? = nil,
+        workTypeName: String? = nil,
         descriptionText: String = "",
         createdAt: Date = Date()
     ) {
@@ -34,6 +40,9 @@ final class WorkSession {
         self.totalEarned = totalEarned
         self.currencyCode = currencyCode
         self.pricingMode = pricingMode
+        self.calendarEventId = calendarEventId
+        self.workTypeId = workTypeId
+        self.workTypeName = workTypeName
         self.descriptionText = descriptionText
         self.createdAt = createdAt
     }

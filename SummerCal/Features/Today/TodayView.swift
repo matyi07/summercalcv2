@@ -46,13 +46,10 @@ struct TodayView: View {
                 if !viewModel.todaysEvents.isEmpty {
                     todaysEventsSection
                 }
+                tomorrowScheduleSection
                 freeDaySummaryCard
-                if !viewModel.suggestions.isEmpty {
-                    suggestionsSection
-                } else if let err = viewModel.suggestionError {
-                    suggestionErrorCard(err)
-                }
                 moneyCard
+                suggestionsPanel
             }
             .padding()
         }
@@ -292,6 +289,7 @@ struct TodayView: View {
     private func eventColor(_ event: CalendarEvent) -> Color {
         if event.isOutdoor { return .green }
         switch event.category {
+        case "work": return .blue
         case "meeting": return .blue
         case "workout": return .orange
         case "appointment": return .red
@@ -376,40 +374,57 @@ struct TodayView: View {
                 Spacer()
             }
 
-            suggestionPreferenceField
-
-            Button {
-                suggestionPreferenceFocused = false
-                showAllSuggestions = false
-                Task {
-                    viewModel.isLoadingSuggestions = true
-                    viewModel.suggestionError = nil
-                    await viewModel.refreshSuggestions(
-                        modelContext: modelContext,
-                        weather: viewModel.weather,
-                        location: locationService.currentCoordinate,
-                        settings: UserSettings.current(in: modelContext),
-                        customPreferences: suggestionPreferenceText
-                    )
-                    viewModel.isLoadingSuggestions = false
-                }
-            } label: {
-                HStack {
-                    if viewModel.isLoadingSuggestions {
-                        ProgressView().tint(.white)
-                    }
-                    Text("Get Suggestions")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.white)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Capsule().fill(Color.orange))
-            }
         }
         .padding()
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)).shadow(color: .black.opacity(0.05), radius: 4))
+    }
+
+    private var tomorrowScheduleSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Tomorrow")
+                .font(.headline)
+
+            if viewModel.tomorrowEvents.isEmpty {
+                HStack(spacing: 10) {
+                    Image(systemName: "calendar")
+                        .foregroundColor(Color(.systemGray))
+                    Text("No events scheduled tomorrow")
+                        .font(.subheadline)
+                        .foregroundStyle(Color(.systemGray))
+                    Spacer()
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemGray6)))
+            } else {
+                ForEach(viewModel.tomorrowEvents.prefix(5)) { event in
+                    Button {
+                        appRouter.navigateToEvent(event.id)
+                    } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(eventColor(event))
+                                .frame(width: 4, height: 42)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(event.title)
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(.primary)
+                                Text(eventTimeSummary(event))
+                                    .font(.caption)
+                                    .foregroundStyle(Color(.systemGray))
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundStyle(Color(.systemGray3))
+                        }
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemBackground)).shadow(color: .black.opacity(0.04), radius: 2))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal)
     }
 
     private var suggestionPreferenceField: some View {
@@ -484,6 +499,53 @@ struct TodayView: View {
         }
     }
 
+    private var suggestionsPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Suggestions")
+                .font(.headline)
+
+            suggestionPreferenceField
+
+            Button {
+                suggestionPreferenceFocused = false
+                showAllSuggestions = false
+                Task {
+                    viewModel.isLoadingSuggestions = true
+                    viewModel.suggestionError = nil
+                    await viewModel.refreshSuggestions(
+                        modelContext: modelContext,
+                        weather: viewModel.weather,
+                        location: locationService.currentCoordinate,
+                        settings: UserSettings.current(in: modelContext),
+                        customPreferences: suggestionPreferenceText
+                    )
+                    viewModel.isLoadingSuggestions = false
+                }
+            } label: {
+                HStack {
+                    if viewModel.isLoadingSuggestions {
+                        ProgressView().tint(.white)
+                    }
+                    Text("Get Suggestions")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Capsule().fill(Color.orange))
+            }
+
+            if !viewModel.suggestions.isEmpty {
+                suggestionsSection
+            } else if let err = viewModel.suggestionError {
+                suggestionErrorCard(err)
+            }
+        }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.systemBackground)).shadow(color: .black.opacity(0.05), radius: 4))
+    }
+
     private var visibleSuggestions: [ActivitySuggestion] {
         showAllSuggestions ? viewModel.suggestions : Array(viewModel.suggestions.prefix(1))
     }
@@ -553,6 +615,16 @@ struct TodayView: View {
                 Text("No monthly goal set")
                     .font(.caption)
                     .foregroundColor(Color(.systemGray))
+            }
+
+            HStack {
+                Label("Past 7 days", systemImage: "calendar.badge.clock")
+                    .font(.caption)
+                    .foregroundColor(Color(.systemGray))
+                Spacer()
+                Text(viewModel.sevenDayEarnings, format: .currency(code: viewModel.currencyCode))
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.green)
             }
         }
         .padding()

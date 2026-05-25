@@ -644,7 +644,7 @@ struct MoneyView: View {
                 .foregroundColor(.blue)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Work Session")
+                Text(session.workTypeName ?? "Work Session")
                     .font(.body)
                     .fontWeight(.medium)
                 HStack(spacing: 4) {
@@ -671,7 +671,10 @@ struct MoneyView: View {
                 Text(viewModel.formatCurrency(viewModel.displayAmount(for: session)))
                     .font(.body)
                     .fontWeight(.semibold)
-                    .foregroundColor(.blue)
+                    .foregroundColor(viewModel.sessionHasEnded(session) ? .blue : Color(.systemGray))
+                Text(viewModel.workSessionStatusLabel(for: session))
+                    .font(.caption2)
+                    .foregroundStyle(Color(.systemGray))
                 Image(systemName: "chevron.right")
                     .font(.caption2)
                     .foregroundStyle(Color(.systemGray3))
@@ -704,9 +707,14 @@ struct MoneyView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(goal.name)
                         .font(.body.weight(.medium))
-                    Text("\(viewModel.formatCurrency(viewModel.allocatedAmount(for: goal))) of \(viewModel.formatCurrency(viewModel.displayTarget(for: goal)))")
+                    Text("\(viewModel.formatCurrency(viewModel.allocatedAmount(for: goal))) of \(viewModel.primarySavingsTargetText(for: goal))")
                         .font(.caption)
                         .foregroundStyle(Color(.systemGray))
+                    if let secondary = viewModel.secondarySavingsTargetText(for: goal) {
+                        Text(secondary)
+                            .font(.caption2)
+                            .foregroundStyle(Color(.systemGray3))
+                    }
                 }
 
                 Spacer()
@@ -757,9 +765,16 @@ struct MoneyView: View {
 
             Spacer()
 
-            Text(viewModel.formatCurrency(viewModel.displayAmount(for: entry)))
-                .font(.body.weight(.semibold))
-                .foregroundColor(entry.amount >= 0 ? .purple : .orange)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(viewModel.primarySavingsAmountText(for: entry))
+                    .font(.body.weight(.semibold))
+                    .foregroundColor(entry.amount >= 0 ? .purple : .orange)
+                if let secondary = viewModel.secondarySavingsAmountText(for: entry) {
+                    Text(secondary)
+                        .font(.caption2)
+                        .foregroundStyle(Color(.systemGray))
+                }
+            }
         }
         .padding(.vertical, 2)
         .frame(minHeight: 44)

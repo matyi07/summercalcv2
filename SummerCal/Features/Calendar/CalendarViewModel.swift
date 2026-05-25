@@ -23,6 +23,21 @@ final class CalendarViewModel {
         return formatter.string(from: currentMonth)
     }
 
+    var monthPositionMessage: String? {
+        let displayed = calendar.dateComponents([.year, .month], from: currentMonth)
+        let current = calendar.dateComponents([.year, .month], from: Date())
+        guard let displayedDate = calendar.date(from: displayed),
+              let currentDate = calendar.date(from: current),
+              !calendar.isDate(displayedDate, equalTo: currentDate, toGranularity: .month) else {
+            return nil
+        }
+        return displayedDate < currentDate ? "Viewing a past month" : "Viewing a future month"
+    }
+
+    var selectedDayIsPast: Bool {
+        selectedDay < calendar.startOfDay(for: Date())
+    }
+
     var daysInMonth: [Date] {
         guard let monthInterval = calendar.dateInterval(of: .month, for: currentMonth)
         else { return [] }
@@ -95,6 +110,10 @@ final class CalendarViewModel {
 
     func selectDay(_ date: Date) {
         selectedDay = calendar.startOfDay(for: date)
+        if !calendar.isDate(selectedDay, equalTo: currentMonth, toGranularity: .month),
+           let selectedMonth = calendar.startOfMonth(for: selectedDay) {
+            currentMonth = selectedMonth
+        }
         updateEventsForSelectedDay()
     }
 

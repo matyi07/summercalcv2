@@ -27,11 +27,37 @@ struct AddEventView: View {
     @State private var selectedReminderOffsets: Set<Int> = [30]
     @State private var hasCustomReminderDate: Bool = false
     @State private var customReminderDate: Date = Date().addingTimeInterval(30 * 60)
+    @State private var selectedWorkTypeId: UUID?
+    @State private var workTypeName: String = ""
+    @State private var workRateText: String = ""
+    @State private var workPricingMode: String = "hourly"
+    @State private var workCurrencyCode: String = ""
     @State private var showPermissionAlert: Bool = false
     @State private var saveError: String?
 
-    private let categories = ["general", "meeting", "workout", "appointment", "travel", "social", "errand"]
+    private let categories = ["general", "work", "meeting", "workout", "appointment", "travel", "social", "errand"]
     private let reminderOptions = [0, 5, 10, 15, 30, 60, 1440]
+
+    private var defaultCurrency: String {
+        UserSettings.current(in: modelContext).currencyCode
+    }
+
+    private var isWorkEvent: Bool {
+        category == "work"
+    }
+
+    private var workRateAmount: Double {
+        Double(workRateText.replacingOccurrences(of: ",", with: ".")) ?? 0
+    }
+
+    private var canSave: Bool {
+        let hasTitle = !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard hasTitle else { return false }
+        if isWorkEvent {
+            return !workTypeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && workRateAmount > 0
+        }
+        return true
+    }
 
     var body: some View {
         NavigationStack {
@@ -43,15 +69,7 @@ struct AddEventView: View {
                 Section("Time") {
                     Toggle("All Day", isOn: $isAllDay)
 
-                    DatePicker("Starts", selection: $startDate, displayedComponents: isAllDay ? [.date] : [.date, .hourAndMinute])
-                        .onChange(of: startDate) { _, newStart in
-                            if endDate < newStart {
-                                endDate = newStart.addingTimeInterval(3600)
-                            }
-                            if customReminderDate > newStart {
-                                customReminderDate = defaultCustomReminderDate(for: newStart)
-                            }
-                        }
+                    startDatePicker
 
                     DatePicker("Ends", selection: $endDate, in: startDate..., displayedComponents: isAllDay ? [.date] : [.date, .hourAndMinute])
                         .onChange(of: startDate) { _, newStart in
@@ -72,6 +90,17 @@ struct AddEventView: View {
                     TextField("Location", text: $location)
 
                     Toggle("Outdoor Event", isOn: $isOutdoor)
+                }
+
+                if isWorkEvent {
+                    WorkTypeSelectionSection(
+                        selectedWorkTypeId: $selectedWorkTypeId,
+                        workTypeName: $workTypeName,
+                        rateText: $workRateText,
+                        pricingMode: $workPricingMode,
+                        currencyCode: $workCurrencyCode,
+                        defaultCurrency: defaultCurrency
+                    )
                 }
 
                 Section("Notes") {
@@ -148,7 +177,7 @@ struct AddEventView: View {
                             dismiss()
                         }
                     }
-                    .disabled(title.isEmpty)
+                    .disabled(!canSave)
                 }
             }
             .onAppear {
@@ -168,6 +197,13 @@ struct AddEventView: View {
                     notes = event.notes ?? ""
                     category = event.category ?? "general"
                     isOutdoor = event.isOutdoor
+                    selectedWorkTypeId = event.workTypeId
+                    workTypeName = event.workTypeName ?? ""
+                    if let rate = event.workRateAmount {
+                        workRateText = String(format: "%.2f", rate).replacingOccurrences(of: ".", with: decimalSeparator())
+                    }
+                    workPricingMode = event.workPricingMode ?? "hourly"
+                    workCurrencyCode = event.workCurrencyCode ?? defaultCurrency
                     notificationEnabled = event.notificationEnabled
                     reminderMinutesBefore = event.reminderMinutesBefore
                     selectedReminderOffsets = Set(event.reminderOffsets())
@@ -198,6 +234,30 @@ struct AddEventView: View {
         }
     }
 
+    @ViewBuilder
+    private var startDatePicker: some View {
+        if existingEvent == nil {
+            DatePicker(
+                "Starts",
+                selection: $startDate,
+                in: Calendar.current.startOfDay(for: Date())...,
+                displayedComponents: isAllDay ? [.date] : [.date, .hourAndMinute]
+            )
+            .onChange(of: startDate) { _, newStart in
+                normalizeDatesAfterStartChange(newStart)
+            }
+        } else {
+            DatePicker(
+                "Starts",
+                selection: $startDate,
+                displayedComponents: isAllDay ? [.date] : [.date, .hourAndMinute]
+            )
+            .onChange(of: startDate) { _, newStart in
+                normalizeDatesAfterStartChange(newStart)
+            }
+        }
+    }
+
     private func checkNotificationPermission() {
         Task {
             let settings = await UNUserNotificationCenter.current().notificationSettings()
@@ -217,8 +277,15 @@ struct AddEventView: View {
 
     private func save() -> Bool {
         saveError = nil
+        if existingEvent == nil && startDate < Calendar.current.startOfDay(for: Date()) {
+            saveError = "New events cannot be added to past days."
+            return false
+        }
+
         let selectedOffsets = Array(selectedReminderOffsets).sorted()
         let sanitizedCustomReminder = hasCustomReminderDate ? min(customReminderDate, startDate) : nil
+        let cleanedWorkTypeName = workTypeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shouldCreateWorkSession = isWorkEvent && !cleanedWorkTypeName.isEmpty && workRateAmount > 0
 
         if let event = existingEvent {
             event.title = title
@@ -233,8 +300,10 @@ struct AddEventView: View {
             event.setReminderOffsets(selectedOffsets)
             reminderMinutesBefore = event.reminderMinutesBefore
             event.customReminderDate = sanitizedCustomReminder
+            applyWorkFields(to: event, shouldCreateWorkSession: shouldCreateWorkSession, cleanedWorkTypeName: cleanedWorkTypeName)
             event.updatedAt = Date()
             do {
+                syncWorkSession(for: event, shouldCreate: shouldCreateWorkSession)
                 try modelContext.save()
             } catch {
                 saveError = "Could not save event: \(error.localizedDescription)"
@@ -263,11 +332,17 @@ struct AddEventView: View {
                 reminderMinutesBeforeList: selectedOffsets.map(String.init).joined(separator: ","),
                 customReminderDate: sanitizedCustomReminder
             )
+            applyWorkFields(to: event, shouldCreateWorkSession: shouldCreateWorkSession, cleanedWorkTypeName: cleanedWorkTypeName)
             modelContext.insert(event)
             do {
+                syncWorkSession(for: event, shouldCreate: shouldCreateWorkSession)
                 try modelContext.save()
             } catch {
                 modelContext.delete(event)
+                let sessions = (try? modelContext.fetch(FetchDescriptor<WorkSession>())) ?? []
+                for session in sessions where session.calendarEventId == event.id {
+                    modelContext.delete(session)
+                }
                 saveError = "Could not save event: \(error.localizedDescription)"
                 return false
             }
@@ -280,6 +355,83 @@ struct AddEventView: View {
             WidgetDataService.refreshTodayEvents(modelContext: modelContext)
         }
         return true
+    }
+
+    private func normalizeDatesAfterStartChange(_ newStart: Date) {
+        if existingEvent == nil {
+            let earliest = Calendar.current.startOfDay(for: Date())
+            if newStart < earliest {
+                startDate = earliest
+                return
+            }
+        }
+        if endDate < newStart {
+            endDate = newStart.addingTimeInterval(3600)
+        }
+        if customReminderDate > newStart {
+            customReminderDate = defaultCustomReminderDate(for: newStart)
+        }
+    }
+
+    private func applyWorkFields(to event: CalendarEvent, shouldCreateWorkSession: Bool, cleanedWorkTypeName: String) {
+        guard shouldCreateWorkSession else {
+            event.workTypeId = nil
+            event.workTypeName = nil
+            event.workRateAmount = nil
+            event.workPricingMode = nil
+            event.workCurrencyCode = nil
+            return
+        }
+
+        event.workTypeId = selectedWorkTypeId
+        event.workTypeName = cleanedWorkTypeName
+        event.workRateAmount = workRateAmount
+        event.workPricingMode = workPricingMode
+        event.workCurrencyCode = workCurrencyCode.isEmpty ? defaultCurrency : workCurrencyCode
+    }
+
+    private func syncWorkSession(for event: CalendarEvent, shouldCreate: Bool) {
+        let sessions = (try? modelContext.fetch(FetchDescriptor<WorkSession>())) ?? []
+        let existingSession = sessions.first { $0.calendarEventId == event.id }
+
+        guard shouldCreate,
+              let rate = event.workRateAmount,
+              let pricingMode = event.workPricingMode else {
+            if let existingSession {
+                modelContext.delete(existingSession)
+            }
+            return
+        }
+
+        let earned = pricingMode == "daily" ? rate : max(event.endDate.timeIntervalSince(event.startDate) / 3600, 0) * rate
+        let note = notes.isEmpty ? title : notes
+
+        if let existingSession {
+            existingSession.date = Calendar.current.startOfDay(for: event.startDate)
+            existingSession.startTime = event.startDate
+            existingSession.endTime = event.endDate
+            existingSession.hourlyRate = rate
+            existingSession.totalEarned = earned
+            existingSession.currencyCode = event.workCurrencyCode ?? defaultCurrency
+            existingSession.pricingMode = pricingMode
+            existingSession.workTypeId = event.workTypeId
+            existingSession.workTypeName = event.workTypeName
+            existingSession.descriptionText = note
+        } else {
+            modelContext.insert(WorkSession(
+                date: Calendar.current.startOfDay(for: event.startDate),
+                startTime: event.startDate,
+                endTime: event.endDate,
+                hourlyRate: rate,
+                totalEarned: earned,
+                currencyCode: event.workCurrencyCode ?? defaultCurrency,
+                pricingMode: pricingMode,
+                calendarEventId: event.id,
+                workTypeId: event.workTypeId,
+                workTypeName: event.workTypeName,
+                descriptionText: note
+            ))
+        }
     }
 
     private func reminderLabel(_ minutes: Int) -> String {
@@ -301,6 +453,7 @@ struct AddEventView: View {
 
     private func iconForCategory(_ category: String) -> String {
         switch category {
+        case "work": return "briefcase"
         case "meeting": return "person.2"
         case "workout": return "figure.run"
         case "appointment": return "stethoscope"
@@ -323,5 +476,9 @@ struct AddEventView: View {
         components.hour = nowTime.hour
         components.minute = nowTime.minute
         return calendar.date(from: components) ?? initialDate
+    }
+
+    private func decimalSeparator() -> String {
+        Locale.current.decimalSeparator ?? "."
     }
 }

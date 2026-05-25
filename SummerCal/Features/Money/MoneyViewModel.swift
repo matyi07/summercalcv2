@@ -34,7 +34,9 @@ final class MoneyViewModel {
     }
 
     var totalWorkEarnings: Double {
-        workSessions.reduce(0) { $0 + displayAmount(for: $1) }
+        workSessions
+            .filter { sessionHasEnded($0) }
+            .reduce(0) { $0 + displayAmount(for: $1) }
     }
 
     var totalGross: Double {
@@ -313,6 +315,14 @@ final class MoneyViewModel {
         workDisplayAmounts[session.id] ?? session.totalEarned
     }
 
+    func sessionHasEnded(_ session: WorkSession) -> Bool {
+        sessionEndDateTime(session) <= Date()
+    }
+
+    func workSessionStatusLabel(for session: WorkSession) -> String {
+        sessionHasEnded(session) ? "Earned" : "Scheduled"
+    }
+
     func sourceCurrencyLabel(for entry: IncomeEntry) -> String? {
         sourceCurrencyLabel(
             originalAmount: entry.originalAmount,
@@ -358,8 +368,31 @@ final class MoneyViewModel {
         savingsDisplayAmounts[entry.id] ?? entry.amount
     }
 
+    func primarySavingsAmountText(for entry: SavingsEntry) -> String {
+        let primaryAmount = entry.originalAmount ?? entry.amount
+        let primaryCurrency = currencyConverter.normalizedCurrencyCode(entry.originalCurrencyCode) ?? entry.currencyCode ?? currencyCode
+        return formatCurrency(primaryAmount, currency: primaryCurrency)
+    }
+
+    func secondarySavingsAmountText(for entry: SavingsEntry) -> String? {
+        let primaryCurrency = currencyConverter.normalizedCurrencyCode(entry.originalCurrencyCode) ?? entry.currencyCode ?? currencyCode
+        guard primaryCurrency != currencyCode else { return nil }
+        return "App value: \(formatCurrency(displayAmount(for: entry)))"
+    }
+
     func displayTarget(for goal: SavingsGoal) -> Double {
         savingsGoalDisplayTargets[goal.id] ?? goal.targetAmount
+    }
+
+    func primarySavingsTargetText(for goal: SavingsGoal) -> String {
+        let goalCurrency = currencyConverter.normalizedCurrencyCode(goal.currencyCode) ?? currencyCode
+        return formatCurrency(goal.targetAmount, currency: goalCurrency)
+    }
+
+    func secondarySavingsTargetText(for goal: SavingsGoal) -> String? {
+        let goalCurrency = currencyConverter.normalizedCurrencyCode(goal.currencyCode) ?? currencyCode
+        guard goalCurrency != currencyCode else { return nil }
+        return "App target: \(formatCurrency(displayTarget(for: goal)))"
     }
 
     func allocatedAmount(for goal: SavingsGoal) -> Double {
@@ -422,5 +455,13 @@ final class MoneyViewModel {
         merged.minute = timeComponents.minute
         merged.second = timeComponents.second
         return calendar.date(from: merged) ?? date
+    }
+
+    private func sessionEndDateTime(_ session: WorkSession) -> Date {
+        let calendar = Calendar.current
+        if !calendar.isDate(session.startTime, inSameDayAs: session.endTime) {
+            return session.endTime
+        }
+        return combinedDateTime(date: session.date, time: session.endTime)
     }
 }

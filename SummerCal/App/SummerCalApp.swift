@@ -21,6 +21,7 @@ struct SummerCalApp: App {
             SavingsEntry.self,
             SavingsGoal.self,
             WorkSession.self,
+            WorkType.self,
             UserSettings.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)

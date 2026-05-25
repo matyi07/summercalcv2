@@ -117,6 +117,23 @@ final class SettingsViewModel {
         for session in workSessions where session.currencyCode == nil {
             session.currencyCode = previousCurrency
         }
+
+        let savingsEntries = (try? modelContext.fetch(FetchDescriptor<SavingsEntry>())) ?? []
+        for entry in savingsEntries where entry.currencyCode == nil {
+            entry.currencyCode = previousCurrency
+            entry.originalAmount = entry.originalAmount ?? entry.amount
+            entry.originalCurrencyCode = entry.originalCurrencyCode ?? previousCurrency
+        }
+
+        let savingsGoals = (try? modelContext.fetch(FetchDescriptor<SavingsGoal>())) ?? []
+        for goal in savingsGoals where goal.currencyCode == nil {
+            goal.currencyCode = previousCurrency
+        }
+
+        let workTypes = (try? modelContext.fetch(FetchDescriptor<WorkType>())) ?? []
+        for type in workTypes where type.currencyCode == nil {
+            type.currencyCode = previousCurrency
+        }
     }
 
     func testConnection() async {
@@ -179,7 +196,8 @@ final class SettingsViewModel {
             SmartNotificationRule.self,
             UserSettings.self,
             EventNote.self,
-            WorkSession.self
+            WorkSession.self,
+            WorkType.self
         ]
 
         for model in models {

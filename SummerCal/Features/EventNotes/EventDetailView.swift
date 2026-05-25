@@ -174,6 +174,12 @@ struct EventDetailView: View {
                     .foregroundColor(.green)
             }
 
+            if event.isWorkEvent, let workTypeName = event.workTypeName {
+                Label(workTypeName, systemImage: "briefcase")
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
+            }
+
             if event.notificationEnabled {
                 HStack(spacing: 4) {
                     Image(systemName: "bell.fill")

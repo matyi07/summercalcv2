@@ -5,6 +5,7 @@ import CoreLocation
 @Observable
 final class TodayViewModel {
     var todaysEvents: [CalendarEvent] = []
+    var tomorrowEvents: [CalendarEvent] = []
     var currentEvent: CalendarEvent?
     var nextEvent: CalendarEvent?
     var isFreeDay: Bool = false
@@ -13,6 +14,7 @@ final class TodayViewModel {
     var weather: WeatherSnapshot?
     var hourlyForecast: [WeatherSnapshot] = []
     var monthlyEarnings: Double = 0
+    var sevenDayEarnings: Double = 0
     var monthlyGoal: Double?
     var isLoading: Bool = false
     var errorMessage: String?
@@ -60,13 +62,18 @@ final class TodayViewModel {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: Date())
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+        let endOfTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfDay)!
 
         let allEventsDescriptor = FetchDescriptor<CalendarEvent>(sortBy: [SortDescriptor(\.startDate)])
         if let allEvents = try? modelContext.fetch(allEventsDescriptor) {
             let todayInterval = DateInterval(start: startOfDay, end: endOfDay)
+            let tomorrowInterval = DateInterval(start: endOfDay, end: endOfTomorrow)
             todaysEvents = allEvents.filter { event in
                 event.overlaps(todayInterval)
             }
+            tomorrowEvents = allEvents.filter { event in
+                event.overlaps(tomorrowInterval)
+            }.sorted { $0.startDate < $1.startDate }
         }
 
         let suggestionDescriptor = FetchDescriptor<ActivitySuggestion>(
@@ -124,7 +131,7 @@ final class TodayViewModel {
         let settings = UserSettings.current(in: modelContext)
         monthlyGoal = settings.monthlyIncomeGoal
         currencyCode = settings.currencyCode
-        await calculateMonthlyEarnings(entries: allIncome, sessions: allSessions, targetCurrency: settings.currencyCode)
+        await calculateEarnings(entries: allIncome, sessions: allSessions, targetCurrency: settings.currencyCode)
 
         detectFreeDay(calendar: calendar, startOfDay: startOfDay, endOfDay: endOfDay)
         findCurrentEvent()
@@ -334,25 +341,44 @@ final class TodayViewModel {
             .min(by: { $0.startDate < $1.startDate })
     }
 
-    private func calculateMonthlyEarnings(entries: [IncomeEntry], sessions: [WorkSession], targetCurrency: String) async {
+    private func calculateEarnings(entries: [IncomeEntry], sessions: [WorkSession], targetCurrency: String) async {
         let calendar = Calendar.current
         guard let monthStart = calendar.dateInterval(of: .month, for: Date())?.start else {
             monthlyEarnings = 0
+            sevenDayEarnings = 0
             return
         }
+        let now = Date()
+        let sevenDayStart = calendar.date(byAdding: .day, value: -7, to: calendar.startOfDay(for: now)) ?? now.addingTimeInterval(-7 * 86_400)
 
         let converter = CurrencyConversionService()
         var entryTotal = 0.0
-        for entry in entries where entry.date >= monthStart && entry.category != .savings {
-            entryTotal += await convertedAmount(entry.amount, from: entry.currencyCode, to: targetCurrency, converter: converter)
+        var sevenDayEntryTotal = 0.0
+        for entry in entries where entry.category != .savings {
+            let amount = await convertedAmount(entry.amount, from: entry.currencyCode, to: targetCurrency, converter: converter)
+            if entry.date >= monthStart && entry.date <= now {
+                entryTotal += amount
+            }
+            if entry.date >= sevenDayStart && entry.date <= now {
+                sevenDayEntryTotal += amount
+            }
         }
 
         var sessionTotal = 0.0
-        for session in sessions where session.date >= monthStart {
-            sessionTotal += await convertedAmount(session.totalEarned, from: session.currencyCode, to: targetCurrency, converter: converter)
+        var sevenDaySessionTotal = 0.0
+        for session in sessions where sessionHasEnded(session, now: now) {
+            let amount = await convertedAmount(session.totalEarned, from: session.currencyCode, to: targetCurrency, converter: converter)
+            let endDate = sessionEndDateTime(session)
+            if endDate >= monthStart && endDate <= now {
+                sessionTotal += amount
+            }
+            if endDate >= sevenDayStart && endDate <= now {
+                sevenDaySessionTotal += amount
+            }
         }
 
         monthlyEarnings = entryTotal + sessionTotal
+        sevenDayEarnings = sevenDayEntryTotal + sevenDaySessionTotal
     }
 
     private func convertedAmount(_ amount: Double, from sourceCurrency: String?, to targetCurrency: String, converter: CurrencyConversionService) async -> Double {
@@ -362,5 +388,27 @@ final class TodayViewModel {
             return amount
         }
         return result.convertedAmount
+    }
+
+    private func sessionHasEnded(_ session: WorkSession, now: Date) -> Bool {
+        sessionEndDateTime(session) <= now
+    }
+
+    private func sessionEndDateTime(_ session: WorkSession) -> Date {
+        let calendar = Calendar.current
+        if !calendar.isDate(session.startTime, inSameDayAs: session.endTime) {
+            return session.endTime
+        }
+
+        let dateComponents = calendar.dateComponents([.year, .month, .day], from: session.date)
+        let timeComponents = calendar.dateComponents([.hour, .minute, .second], from: session.endTime)
+        var merged = DateComponents()
+        merged.year = dateComponents.year
+        merged.month = dateComponents.month
+        merged.day = dateComponents.day
+        merged.hour = timeComponents.hour
+        merged.minute = timeComponents.minute
+        merged.second = timeComponents.second
+        return calendar.date(from: merged) ?? session.endTime
     }
 }

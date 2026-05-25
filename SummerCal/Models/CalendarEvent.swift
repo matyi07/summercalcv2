@@ -17,6 +17,11 @@ final class CalendarEvent {
     var reminderMinutesBefore: Int
     var reminderMinutesBeforeList: String?
     var customReminderDate: Date?
+    var workTypeId: UUID?
+    var workTypeName: String?
+    var workRateAmount: Double?
+    var workPricingMode: String?
+    var workCurrencyCode: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -35,6 +40,11 @@ final class CalendarEvent {
         reminderMinutesBefore: Int = 30,
         reminderMinutesBeforeList: String? = "30",
         customReminderDate: Date? = nil,
+        workTypeId: UUID? = nil,
+        workTypeName: String? = nil,
+        workRateAmount: Double? = nil,
+        workPricingMode: String? = nil,
+        workCurrencyCode: String? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -52,6 +62,11 @@ final class CalendarEvent {
         self.reminderMinutesBefore = reminderMinutesBefore
         self.reminderMinutesBeforeList = reminderMinutesBeforeList
         self.customReminderDate = customReminderDate
+        self.workTypeId = workTypeId
+        self.workTypeName = workTypeName
+        self.workRateAmount = workRateAmount
+        self.workPricingMode = workPricingMode
+        self.workCurrencyCode = workCurrencyCode
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -75,5 +90,9 @@ final class CalendarEvent {
         let cleaned = Array(Set(offsets.filter { $0 >= 0 })).sorted()
         reminderMinutesBeforeList = cleaned.map(String.init).joined(separator: ",")
         reminderMinutesBefore = cleaned.first ?? 30
+    }
+
+    var isWorkEvent: Bool {
+        category == "work"
     }
 }

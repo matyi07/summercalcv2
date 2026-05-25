@@ -19,6 +19,8 @@ struct CalendarView: View {
         VStack(spacing: 0) {
             monthHeader
 
+            monthPositionBanner
+
             eventScopePicker
 
             weekdayHeadersRow
@@ -35,10 +37,12 @@ struct CalendarView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
+                    guard !viewModel.selectedDayIsPast else { return }
                     showAddEvent = true
                 } label: {
                     Image(systemName: "plus")
                 }
+                .disabled(viewModel.selectedDayIsPast)
             }
         }
         .sheet(isPresented: $showAddEvent) {
@@ -114,6 +118,23 @@ struct CalendarView: View {
         .padding(.bottom, 4)
     }
 
+    @ViewBuilder
+    private var monthPositionBanner: some View {
+        if let message = viewModel.monthPositionMessage {
+            HStack(spacing: 6) {
+                Image(systemName: message.contains("past") ? "clock.arrow.circlepath" : "calendar.badge.clock")
+                    .font(.caption)
+                Text(message)
+                    .font(.caption.weight(.medium))
+            }
+            .foregroundStyle(Color(.systemGray))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color(.systemGray6), in: Capsule())
+            .padding(.bottom, 4)
+        }
+    }
+
     private var colorLegend: some View {
         HStack(spacing: 16) {
             HStack(spacing: 4) {
@@ -150,16 +171,21 @@ struct CalendarView: View {
             }
         }
         .padding(.horizontal, 8)
-        .gesture(monthSwipeGesture)
+        .contentShape(Rectangle())
+        .simultaneousGesture(monthSwipeGesture)
     }
 
     private var monthSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 35)
+        DragGesture(minimumDistance: 16)
             .onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height),
-                      abs(value.translation.width) > 60 else { return }
-                withAnimation {
-                    if value.translation.width < 0 {
+                let horizontal = value.translation.width
+                let predicted = value.predictedEndTranslation.width
+                let vertical = value.translation.height
+                let strongestHorizontal = abs(predicted) > abs(horizontal) ? predicted : horizontal
+                guard abs(strongestHorizontal) > abs(vertical) * 1.1,
+                      abs(strongestHorizontal) > 28 else { return }
+                withAnimation(.easeOut(duration: 0.18)) {
+                    if strongestHorizontal < 0 {
                         viewModel.goToNextMonth()
                     } else {
                         viewModel.goToPreviousMonth()
@@ -281,6 +307,10 @@ struct CalendarView: View {
 
     private func deleteEvent(_ event: CalendarEvent) {
         Task { await NotificationService.shared.cancelAll(forEventId: event.id) }
+        let sessions = (try? modelContext.fetch(FetchDescriptor<WorkSession>())) ?? []
+        for session in sessions where session.calendarEventId == event.id {
+            modelContext.delete(session)
+        }
         modelContext.delete(event)
         try? modelContext.save()
         WidgetDataService.refreshTodayEvents(modelContext: modelContext)
@@ -306,6 +336,7 @@ struct CalendarView: View {
 
     private func iconForCategory(_ category: String?) -> String {
         switch category {
+        case "work": return "briefcase"
         case "meeting": return "person.2"
         case "workout": return "figure.run"
         case "appointment": return "stethoscope"
@@ -318,6 +349,7 @@ struct CalendarView: View {
 
     private func categoryColor(_ category: String?) -> Color {
         switch category {
+        case "work": return .blue
         case "meeting": return .blue
         case "workout": return .green
         case "appointment": return .red
