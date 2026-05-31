@@ -111,7 +111,7 @@ struct AddWorkSessionView: View {
                         .lineLimit(2...4)
                 }
 
-                Section("Work Funds") {
+                Section {
                     Picker("Savings Account", selection: $selectedSavingsGoalId) {
                         Text("Unassigned Savings").tag(nil as UUID?)
                         ForEach(activeSavingsGoals) { goal in
@@ -135,6 +135,8 @@ struct AddWorkSessionView: View {
                                 .foregroundColor(.purple)
                         }
                     }
+                } header: {
+                    Text("Work Funds")
                 } footer: {
                     Text("Leave spendable blank to keep all earnings spendable. Any remaining earnings are counted toward the selected savings account.")
                 }
