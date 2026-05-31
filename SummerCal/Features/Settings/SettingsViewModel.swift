@@ -25,6 +25,7 @@ final class SettingsViewModel {
     var monthlyIncomeGoal: Double = 0
     var moneyEntryPreviewLimit: Int = 5
     var languageCode: String = "en"
+    var appearanceMode: String = "system"
 
     var hasValidAPIKey: Bool {
         !apiKey.trimmingCharacters(in: .whitespaces).isEmpty
@@ -55,6 +56,7 @@ final class SettingsViewModel {
         monthlyIncomeGoal = s.monthlyIncomeGoal ?? 0
         moneyEntryPreviewLimit = max(1, s.moneyEntryPreviewLimit ?? 5)
         languageCode = s.languageCode ?? "en"
+        appearanceMode = s.appearanceMode ?? "system"
 
         apiKey = loadAPIKey(for: s.aiProviderKind) ?? ""
         locationEnabled = s.locationEnabled ?? true
@@ -87,6 +89,7 @@ final class SettingsViewModel {
         s.monthlyIncomeGoal = monthlyIncomeGoal
         s.moneyEntryPreviewLimit = max(1, moneyEntryPreviewLimit)
         s.languageCode = languageCode
+        s.appearanceMode = appearanceMode
         s.selectedActivities = Array(selectedActivities).joined(separator: ",")
         s.energyLevel = energyLevel
         s.budgetPreference = budgetPreference

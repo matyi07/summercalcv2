@@ -24,6 +24,16 @@ struct EventDetailView: View {
         case checklist = "Checklist"
         case links = "Links"
         case weather = "Weather"
+
+        var titleKey: LocalizedStringKey {
+            switch self {
+            case .notes: return "Notes"
+            case .prep: return "Prep"
+            case .checklist: return "Checklist"
+            case .links: return "Links"
+            case .weather: return "Weather"
+            }
+        }
     }
 
     init(eventId: UUID) {
@@ -44,7 +54,7 @@ struct EventDetailView: View {
 
                     Picker("Tab", selection: $selectedTab) {
                         ForEach(EventDetailTab.allCases, id: \.self) { tab in
-                            Text(tab.rawValue).tag(tab)
+                            Text(tab.titleKey).tag(tab)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -94,7 +104,7 @@ struct EventDetailView: View {
                 deleteEvent()
             }
         } message: {
-            Text("Are you sure you want to delete \"\(event?.title ?? "")\"? This cannot be undone.")
+            Text("Are you sure you want to delete this event? This cannot be undone.")
         }
         .onAppear {
             fetchEvent()
@@ -296,7 +306,11 @@ struct EventDetailView: View {
                         ProgressView()
                             .tint(.white)
                     }
-                    Text(viewModel.isGeneratingPrep ? "Generating..." : "AI Generate Prep")
+                    if viewModel.isGeneratingPrep {
+                        Text("Generating...")
+                    } else {
+                        Text("AI Generate Prep")
+                    }
                 }
                 .font(.headline)
                 .foregroundColor(.white)
@@ -306,6 +320,14 @@ struct EventDetailView: View {
             }
             .disabled(viewModel.isGeneratingPrep)
             .padding(.horizontal)
+
+            if let error = viewModel.generationError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+            }
 
             let prep = viewModel.prepNotes
             if prep.isEmpty {
@@ -511,7 +533,7 @@ struct EventDetailView: View {
         }
     }
 
-    private func emptyTabState(_ message: String) -> some View {
+    private func emptyTabState(_ message: LocalizedStringKey) -> some View {
         VStack(spacing: 8) {
             Image(systemName: "doc.text")
                 .font(.title2)

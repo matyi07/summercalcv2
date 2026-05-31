@@ -9,13 +9,18 @@ struct WorkTypeSelectionSection: View {
     @Binding var rateText: String
     @Binding var pricingMode: String
     @Binding var currencyCode: String
+    @Binding var selectedWorkVariantId: UUID?
+    @Binding var locationName: String
 
     let defaultCurrency: String
     var workStartTime: Binding<Date>?
     var workEndTime: Binding<Date>?
     var showsWorkHours: Bool = false
+    var onWorkTypeApplied: ((WorkType) -> Void)?
 
     @Query(sort: \WorkType.name) private var workTypes: [WorkType]
+    @State private var workVariants: [WorkTimeVariant] = []
+    @State private var variantNameText: String = ""
 
     private let currencies = ["USD", "EUR", "GBP", "HUF", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN", "BRL", "KRW"]
 
@@ -35,8 +40,21 @@ struct WorkTypeSelectionSection: View {
         selectedWorkTypeId == nil ? "Save Type" : "Update Type"
     }
 
+    private var variantButtonTitleKey: LocalizedStringKey {
+        selectedWorkVariantId == nil ? "Add Variant" : "Update Variant"
+    }
+
     private var canSaveWorkType: Bool {
         !workTypeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && rateAmount > 0
+    }
+
+    private var canSaveVariant: Bool {
+        guard let workStartTime,
+              let workEndTime,
+              workEndTime.wrappedValue > workStartTime.wrappedValue else {
+            return false
+        }
+        return !variantNameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -56,6 +74,20 @@ struct WorkTypeSelectionSection: View {
             if showsWorkHours,
                let workStartTime,
                let workEndTime {
+                TextField("Work Location", text: $locationName)
+
+                if !workVariants.isEmpty {
+                    Picker("Work Variant", selection: $selectedWorkVariantId) {
+                        Text("Manual Hours").tag(nil as UUID?)
+                        ForEach(workVariants) { variant in
+                            Text("\(variant.name) (\(variant.timeRangeText()))").tag(Optional(variant.id))
+                        }
+                    }
+                    .onChange(of: selectedWorkVariantId) { _, id in
+                        applyVariant(id)
+                    }
+                }
+
                 DatePicker(
                     "Work Starts",
                     selection: workStartTime,
@@ -75,6 +107,46 @@ struct WorkTypeSelectionSection: View {
                 .onChange(of: workEndTime.wrappedValue) { _, newEnd in
                     if newEnd <= workStartTime.wrappedValue {
                         workEndTime.wrappedValue = workStartTime.wrappedValue.addingTimeInterval(3600)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    TextField("Variant Name", text: $variantNameText)
+                    Button {
+                        saveVariantFromCurrentHours()
+                    } label: {
+                        Text(variantButtonTitleKey)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(!canSaveVariant)
+                }
+
+                if !workVariants.isEmpty {
+                    ForEach(workVariants) { variant in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(variant.name)
+                                Text(variant.timeRangeText())
+                                    .font(.caption)
+                                    .foregroundStyle(Color(.systemGray))
+                            }
+                            Spacer()
+                            Button {
+                                selectedWorkVariantId = variant.id
+                                variantNameText = variant.name
+                                applyVariant(variant.id)
+                            } label: {
+                                Image(systemName: "checkmark.circle")
+                            }
+                            .buttonStyle(.borderless)
+
+                            Button(role: .destructive) {
+                                deleteVariant(variant)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                        }
                     }
                 }
             }
@@ -134,11 +206,16 @@ struct WorkTypeSelectionSection: View {
     }
 
     private func applyWorkType(_ id: UUID?, includeSchedule: Bool) {
-        guard let id,
-              let type = workTypes.first(where: { $0.id == id }) else {
+        guard let id else {
             if currencyCode.isEmpty {
                 currencyCode = defaultCurrency
             }
+            workVariants = []
+            selectedWorkVariantId = nil
+            return
+        }
+
+        guard let type = workTypes.first(where: { $0.id == id }) else {
             return
         }
 
@@ -146,9 +223,35 @@ struct WorkTypeSelectionSection: View {
         rateText = String(format: "%.2f", type.rateAmount).replacingOccurrences(of: ".", with: decimalSeparator())
         pricingMode = type.pricingMode
         currencyCode = type.currencyCode ?? defaultCurrency
-        if includeSchedule, showsWorkHours {
-            applyStoredWorkHours(from: type)
+        locationName = type.locationName ?? ""
+        workVariants = type.workVariants()
+
+        if let defaultVariantId = type.defaultVariantId,
+           workVariants.contains(where: { $0.id == defaultVariantId }) {
+            selectedWorkVariantId = defaultVariantId
+        } else if let selectedWorkVariantId,
+                  !workVariants.contains(where: { $0.id == selectedWorkVariantId }) {
+            self.selectedWorkVariantId = workVariants.first?.id
+        } else if selectedWorkVariantId == nil {
+            selectedWorkVariantId = workVariants.first?.id
         }
+
+        if let selectedWorkVariantId,
+           let selectedVariant = workVariants.first(where: { $0.id == selectedWorkVariantId }) {
+            variantNameText = selectedVariant.name
+        } else {
+            variantNameText = ""
+        }
+
+        if includeSchedule, showsWorkHours {
+            if let selectedWorkVariantId,
+               workVariants.contains(where: { $0.id == selectedWorkVariantId }) {
+                applyVariant(selectedWorkVariantId)
+            } else {
+                applyStoredWorkHours(from: type)
+            }
+        }
+        onWorkTypeApplied?(type)
     }
 
     private func saveWorkType() {
@@ -161,6 +264,9 @@ struct WorkTypeSelectionSection: View {
             existing.rateAmount = rateAmount
             existing.pricingMode = pricingMode
             existing.currencyCode = selectedCurrency
+            existing.locationName = cleanedLocationName()
+            existing.defaultVariantId = selectedWorkVariantId
+            existing.setWorkVariants(workVariants)
             persistWorkHours(on: existing)
             existing.updatedAt = Date()
         } else {
@@ -168,8 +274,11 @@ struct WorkTypeSelectionSection: View {
                 name: cleanedName,
                 rateAmount: rateAmount,
                 pricingMode: pricingMode,
-                currencyCode: selectedCurrency
+                currencyCode: selectedCurrency,
+                locationName: cleanedLocationName(),
+                defaultVariantId: selectedWorkVariantId
             )
+            type.setWorkVariants(workVariants)
             persistWorkHours(on: type)
             modelContext.insert(type)
             selectedWorkTypeId = type.id
@@ -183,7 +292,88 @@ struct WorkTypeSelectionSection: View {
               let type = workTypes.first(where: { $0.id == id }) else { return }
         modelContext.delete(type)
         selectedWorkTypeId = nil
+        selectedWorkVariantId = nil
+        workVariants = []
+        variantNameText = ""
         try? modelContext.save()
+    }
+
+    private func saveVariantFromCurrentHours() {
+        guard let workStartTime,
+              let workEndTime,
+              workEndTime.wrappedValue > workStartTime.wrappedValue,
+              let newVariant = WorkTimeVariant(
+                name: variantNameText,
+                start: workStartTime.wrappedValue,
+                end: workEndTime.wrappedValue
+              ) else {
+            return
+        }
+
+        if let selectedWorkVariantId,
+           let index = workVariants.firstIndex(where: { $0.id == selectedWorkVariantId }) {
+            workVariants[index] = WorkTimeVariant(
+                id: selectedWorkVariantId,
+                name: newVariant.name,
+                startHour: newVariant.startHour,
+                startMinute: newVariant.startMinute,
+                endHour: newVariant.endHour,
+                endMinute: newVariant.endMinute
+            )
+        } else {
+            workVariants.append(newVariant)
+            selectedWorkVariantId = newVariant.id
+        }
+
+        if selectedWorkTypeId == nil {
+            saveWorkType()
+        } else {
+            persistVariantsOnSelectedType()
+        }
+    }
+
+    private func deleteVariant(_ variant: WorkTimeVariant) {
+        workVariants.removeAll { $0.id == variant.id }
+        if selectedWorkVariantId == variant.id {
+            selectedWorkVariantId = workVariants.first?.id
+            variantNameText = workVariants.first?.name ?? ""
+            applyVariant(selectedWorkVariantId)
+        }
+        persistVariantsOnSelectedType()
+    }
+
+    private func applyVariant(_ id: UUID?) {
+        guard let id,
+              let variant = workVariants.first(where: { $0.id == id }),
+              let workStartTime,
+              let start = variant.startDate(on: workStartTime.wrappedValue) else {
+            return
+        }
+
+        workStartTime.wrappedValue = start
+        variantNameText = variant.name
+
+        guard let workEndTime else { return }
+        let end = variant.endDate(on: start) ?? start.addingTimeInterval(3600)
+        workEndTime.wrappedValue = normalizedEnd(start: start, end: end)
+    }
+
+    private func persistVariantsOnSelectedType() {
+        guard let selectedWorkTypeId,
+              let type = workTypes.first(where: { $0.id == selectedWorkTypeId }) else {
+            return
+        }
+
+        type.defaultVariantId = selectedWorkVariantId
+        type.setWorkVariants(workVariants)
+        persistWorkHours(on: type)
+        type.updatedAt = Date()
+        try? modelContext.save()
+    }
+
+    private func cleanedLocationName() -> String? {
+        let cleaned = locationName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
     }
 
     private func decimalSeparator() -> String {

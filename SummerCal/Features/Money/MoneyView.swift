@@ -29,6 +29,8 @@ struct MoneyView: View {
 
             savingsOverviewSection
 
+            workFundsSection
+
             Section {
                 HStack {
                     Text("Spendable Daily Average")
@@ -512,6 +514,51 @@ struct MoneyView: View {
         }
     }
 
+    private var workFundsSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Work Funds")
+                            .font(.headline)
+                        Text(viewModel.formatCurrency(viewModel.totalWorkEarnings))
+                            .font(.title3.weight(.semibold))
+                            .foregroundColor(.blue)
+                        Text("Gross work earnings this month")
+                            .font(.caption2)
+                            .foregroundStyle(Color(.systemGray))
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Spendable")
+                            .font(.caption)
+                            .foregroundStyle(Color(.systemGray))
+                        Text(viewModel.formatCurrency(viewModel.totalWorkSpendable))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.blue)
+                    }
+                }
+
+                Divider()
+
+                HStack {
+                    Label("Saved from work", systemImage: "tray.and.arrow.down")
+                        .font(.caption)
+                        .foregroundStyle(Color(.systemGray))
+                    Spacer()
+                    Text(viewModel.formatCurrency(viewModel.monthlyWorkSavings))
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.purple)
+                }
+
+                Text("Only the spendable part of completed work sessions is included in Spendable Balance. The rest is counted in Savings and assigned to the selected savings account.")
+                    .font(.caption)
+                    .foregroundStyle(Color(.systemGray))
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
     private var goalProgressSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
@@ -617,7 +664,7 @@ struct MoneyView: View {
                 HStack(spacing: 4) {
                     Image(systemName: paymentIcon(entry.paymentMethod))
                         .font(.caption2)
-                    Text(entry.paymentMethod.capitalized)
+                    Text(LocalizedStringKey(entry.paymentMethod.capitalized))
                         .font(.caption2)
                     Text(viewModel.formatDate(entry.date))
                         .font(.caption2)
@@ -700,6 +747,12 @@ struct MoneyView: View {
                         .font(.caption)
                         .foregroundStyle(Color(.systemGray))
                         .lineLimit(1)
+                }
+                if session.savingsWorkAmount > 0 {
+                    Text("Spendable \(viewModel.formatCurrency(viewModel.displayWorkSpendableAmount(for: session))) - Saved \(viewModel.formatCurrency(viewModel.displayWorkSavingsAmount(for: session))) to \(viewModel.workSavingsDestinationLabel(for: session))")
+                        .font(.caption2)
+                        .foregroundStyle(Color(.systemGray))
+                        .lineLimit(2)
                 }
                 Text(viewModel.formatDate(session.date))
                     .font(.caption2)

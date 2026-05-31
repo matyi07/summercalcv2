@@ -13,11 +13,17 @@ struct AddWorkSessionView: View {
     @State private var hourlyRateText: String = ""
     @State private var pricingMode: String = "hourly"
     @State private var selectedWorkTypeId: UUID?
+    @State private var selectedWorkVariantId: UUID?
     @State private var workTypeName: String = ""
+    @State private var workLocation: String = ""
     @State private var workCurrencyCode: String = ""
+    @State private var spendableAmountText: String = ""
+    @State private var selectedSavingsGoalId: UUID?
     @State private var note: String = ""
     @State private var rateErrorTrigger: Bool = false
     @State private var saveError: String?
+
+    @Query(sort: \SavingsGoal.createdAt, order: .reverse) private var savingsGoals: [SavingsGoal]
 
     var onSave: (() -> Void)?
 
@@ -40,6 +46,23 @@ struct AddWorkSessionView: View {
 
     private var estimatedEarnings: Double {
         pricingMode == "daily" ? rateAmount : durationHours * rateAmount
+    }
+
+    private var requestedSpendableAmount: Double {
+        let cleaned = spendableAmountText.replacingOccurrences(of: ",", with: ".")
+        guard !cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let amount = Double(cleaned) else {
+            return estimatedEarnings
+        }
+        return min(max(amount, 0), estimatedEarnings)
+    }
+
+    private var estimatedSavingsAmount: Double {
+        max(estimatedEarnings - requestedSpendableAmount, 0)
+    }
+
+    private var activeSavingsGoals: [SavingsGoal] {
+        savingsGoals.filter { !$0.archived }
     }
 
     private var isValid: Bool {
@@ -69,6 +92,8 @@ struct AddWorkSessionView: View {
                     rateText: $hourlyRateText,
                     pricingMode: $pricingMode,
                     currencyCode: $workCurrencyCode,
+                    selectedWorkVariantId: $selectedWorkVariantId,
+                    locationName: $workLocation,
                     defaultCurrency: defaultCurrency,
                     workStartTime: sessionStartBinding,
                     workEndTime: sessionEndBinding,
@@ -84,6 +109,34 @@ struct AddWorkSessionView: View {
                 Section {
                     TextField("Note", text: $note, axis: .vertical)
                         .lineLimit(2...4)
+                }
+
+                Section("Work Funds") {
+                    Picker("Savings Account", selection: $selectedSavingsGoalId) {
+                        Text("Unassigned Savings").tag(nil as UUID?)
+                        ForEach(activeSavingsGoals) { goal in
+                            Label(goal.name, systemImage: goal.iconName).tag(Optional(goal.id))
+                        }
+                    }
+
+                    HStack {
+                        Text(selectedCurrency)
+                            .foregroundStyle(Color(.systemGray))
+                        TextField("Spendable Amount", text: $spendableAmountText)
+                            .keyboardType(.decimalPad)
+                    }
+
+                    if isValid {
+                        HStack {
+                            Text("Saved From Work")
+                            Spacer()
+                            Text(formatCurrency(estimatedSavingsAmount))
+                                .fontWeight(.semibold)
+                                .foregroundColor(.purple)
+                        }
+                    }
+                } footer: {
+                    Text("Leave spendable blank to keep all earnings spendable. Any remaining earnings are counted toward the selected savings account.")
                 }
 
                 if let saveError {
@@ -134,9 +187,11 @@ struct AddWorkSessionView: View {
                     endTime = session.endTime
                     pricingMode = session.pricingMode ?? "hourly"
                     selectedWorkTypeId = session.workTypeId
+                    selectedSavingsGoalId = session.savingsGoalId
                     workTypeName = session.workTypeName ?? ""
                     workCurrencyCode = session.currencyCode ?? defaultCurrency
                     hourlyRateText = String(format: "%.2f", session.hourlyRate).replacingOccurrences(of: ".", with: decimalSeparator())
+                    spendableAmountText = String(format: "%.2f", session.spendableWorkAmount).replacingOccurrences(of: ".", with: decimalSeparator())
                     note = session.descriptionText
                     if session.currencyCode == nil {
                         session.currencyCode = defaultCurrency
@@ -208,6 +263,7 @@ struct AddWorkSessionView: View {
         let sessionEnd = sessionEndBinding.wrappedValue
         let duration = sessionEnd.timeIntervalSince(sessionStart) / 3600
         let earned = pricingMode == "daily" ? rateAmount : duration * rateAmount
+        let spendable = min(max(requestedSpendableAmount, 0), earned)
         let cleanedWorkTypeName = workTypeName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !cleanedWorkTypeName.isEmpty, rateAmount > 0 {
             upsertWorkType(named: cleanedWorkTypeName)
@@ -221,6 +277,8 @@ struct AddWorkSessionView: View {
             session.totalEarned = earned
             session.currencyCode = selectedCurrency
             session.pricingMode = pricingMode
+            session.spendableAmount = spendable
+            session.savingsGoalId = selectedSavingsGoalId
             session.workTypeId = selectedWorkTypeId
             session.workTypeName = cleanedWorkTypeName.isEmpty ? nil : cleanedWorkTypeName
             session.descriptionText = note
@@ -234,6 +292,8 @@ struct AddWorkSessionView: View {
                 totalEarned: earned,
                 currencyCode: selectedCurrency,
                 pricingMode: pricingMode,
+                spendableAmount: spendable,
+                savingsGoalId: selectedSavingsGoalId,
                 workTypeId: selectedWorkTypeId,
                 workTypeName: cleanedWorkTypeName.isEmpty ? nil : cleanedWorkTypeName,
                 descriptionText: note
@@ -268,6 +328,8 @@ struct AddWorkSessionView: View {
             type.rateAmount = rateAmount
             type.pricingMode = pricingMode
             type.currencyCode = selectedCurrency
+            type.locationName = cleanedWorkLocation()
+            type.defaultVariantId = selectedWorkVariantId
             persistWorkHours(on: type)
             type.updatedAt = Date()
             selectedWorkTypeId = type.id
@@ -276,7 +338,9 @@ struct AddWorkSessionView: View {
                 name: cleanedName,
                 rateAmount: rateAmount,
                 pricingMode: pricingMode,
-                currencyCode: selectedCurrency
+                currencyCode: selectedCurrency,
+                locationName: cleanedWorkLocation(),
+                defaultVariantId: selectedWorkVariantId
             )
             persistWorkHours(on: type)
             modelContext.insert(type)
@@ -294,6 +358,11 @@ struct AddWorkSessionView: View {
         type.defaultEndMinute = endComponents.minute
         type.defaultStartDate = nil
         type.defaultEndDate = nil
+    }
+
+    private func cleanedWorkLocation() -> String? {
+        let cleaned = workLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
     }
 
     private func syncLinkedEvent(from session: WorkSession) {

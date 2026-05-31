@@ -31,6 +31,7 @@ final class UserSettings {
     var approximateLocation: Bool?
     var moneyEntryPreviewLimit: Int?
     var languageCode: String?
+    var appearanceMode: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -63,6 +64,7 @@ final class UserSettings {
         approximateLocation: Bool? = false,
         moneyEntryPreviewLimit: Int? = 5,
         languageCode: String? = "en",
+        appearanceMode: String? = "system",
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -94,6 +96,7 @@ final class UserSettings {
         self.approximateLocation = approximateLocation
         self.moneyEntryPreviewLimit = moneyEntryPreviewLimit
         self.languageCode = languageCode
+        self.appearanceMode = appearanceMode
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

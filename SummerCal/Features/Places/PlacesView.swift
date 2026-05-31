@@ -302,7 +302,7 @@ struct PlacesView: View {
                         }
 
                         if let category = place.category {
-                            Text(category.capitalized)
+                            Text(LocalizedStringKey(category.capitalized))
                                 .font(.caption)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)

@@ -7,6 +7,7 @@ final class MoneyViewModel {
     var incomeEntries: [IncomeEntry] = []
     var expenseEntries: [ExpenseEntry] = []
     var workSessions: [WorkSession] = []
+    var allWorkSessions: [WorkSession] = []
     var savingsEntries: [SavingsEntry] = []
     var savingsGoals: [SavingsGoal] = []
     var savingsIncomeEntries: [IncomeEntry] = []
@@ -16,6 +17,9 @@ final class MoneyViewModel {
     var incomeDisplayAmounts: [UUID: Double] = [:]
     var expenseDisplayAmounts: [UUID: Double] = [:]
     var workDisplayAmounts: [UUID: Double] = [:]
+    var workSpendableDisplayAmounts: [UUID: Double] = [:]
+    var workSavingsDisplayAmounts: [UUID: Double] = [:]
+    var workSavingsPrimaryDisplayAmounts: [UUID: Double] = [:]
     var savingsDisplayAmounts: [UUID: Double] = [:]
     var savingsPrimaryDisplayAmounts: [UUID: Double] = [:]
     var savingsIncomeDisplayAmounts: [UUID: Double] = [:]
@@ -47,8 +51,26 @@ final class MoneyViewModel {
             .reduce(0) { $0 + displayAmount(for: $1) }
     }
 
+    var totalWorkSpendable: Double {
+        workSessions
+            .filter { sessionHasEnded($0) }
+            .reduce(0) { $0 + displayWorkSpendableAmount(for: $1) }
+    }
+
+    var monthlyWorkSavings: Double {
+        workSessions
+            .filter { sessionHasEnded($0) }
+            .reduce(0) { $0 + displayWorkSavingsAmount(for: $1) }
+    }
+
+    var totalWorkSavingsBalance: Double {
+        allWorkSessions
+            .filter { sessionHasEnded($0) }
+            .reduce(0) { $0 + displayWorkSavingsAmount(for: $1) }
+    }
+
     var totalGross: Double {
-        totalIncome + totalWorkEarnings
+        totalIncome + totalWorkSpendable
     }
 
     var spendableBalance: Double {
@@ -60,7 +82,7 @@ final class MoneyViewModel {
         let incomeSavings = savingsIncomeEntries.reduce(0) {
             $0 + (savingsIncomeDisplayAmounts[$1.id] ?? $1.amount)
         }
-        return accountSavings + incomeSavings
+        return accountSavings + incomeSavings + totalWorkSavingsBalance
     }
 
     var netBalance: Double {
@@ -214,6 +236,9 @@ final class MoneyViewModel {
         )
         workSessions = (try? modelContext.fetch(workDescriptor)) ?? []
 
+        let allWorkDescriptor = FetchDescriptor<WorkSession>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        allWorkSessions = (try? modelContext.fetch(allWorkDescriptor)) ?? []
+
         let savingsDescriptor = FetchDescriptor<SavingsEntry>(sortBy: [SortDescriptor(\.date, order: .reverse)])
         savingsEntries = (try? modelContext.fetch(savingsDescriptor)) ?? []
 
@@ -222,7 +247,10 @@ final class MoneyViewModel {
 
         incomeDisplayAmounts = Dictionary(uniqueKeysWithValues: incomeEntries.map { ($0.id, $0.amount) })
         expenseDisplayAmounts = Dictionary(uniqueKeysWithValues: expenseEntries.map { ($0.id, $0.amount) })
-        workDisplayAmounts = Dictionary(uniqueKeysWithValues: workSessions.map { ($0.id, $0.totalEarned) })
+        workDisplayAmounts = Dictionary(uniqueKeysWithValues: allWorkSessions.map { ($0.id, $0.totalEarned) })
+        workSpendableDisplayAmounts = Dictionary(uniqueKeysWithValues: allWorkSessions.map { ($0.id, $0.spendableWorkAmount) })
+        workSavingsDisplayAmounts = Dictionary(uniqueKeysWithValues: allWorkSessions.map { ($0.id, $0.savingsWorkAmount) })
+        workSavingsPrimaryDisplayAmounts = Dictionary(uniqueKeysWithValues: allWorkSessions.map { ($0.id, $0.savingsWorkAmount) })
         savingsDisplayAmounts = Dictionary(uniqueKeysWithValues: savingsEntries.map { ($0.id, $0.amount) })
         savingsPrimaryDisplayAmounts = Dictionary(uniqueKeysWithValues: savingsEntries.map { ($0.id, primarySavingsFallbackAmount(for: $0)) })
         savingsIncomeDisplayAmounts = Dictionary(uniqueKeysWithValues: savingsIncomeEntries.map { ($0.id, $0.amount) })
@@ -249,10 +277,26 @@ final class MoneyViewModel {
             )
         }
 
-        for session in workSessions {
+        for session in allWorkSessions {
             workDisplayAmounts[session.id] = await convertedAmount(
                 session.totalEarned,
                 from: session.currencyCode,
+                fallbackCurrency: currencyCode
+            )
+            workSpendableDisplayAmounts[session.id] = await convertedAmount(
+                session.spendableWorkAmount,
+                from: session.currencyCode,
+                fallbackCurrency: currencyCode
+            )
+            workSavingsDisplayAmounts[session.id] = await convertedAmount(
+                session.savingsWorkAmount,
+                from: session.currencyCode,
+                fallbackCurrency: currencyCode
+            )
+            workSavingsPrimaryDisplayAmounts[session.id] = await convertedAmount(
+                session.savingsWorkAmount,
+                from: session.currencyCode,
+                to: primaryWorkSavingsCurrency(for: session),
                 fallbackCurrency: currencyCode
             )
         }
@@ -304,6 +348,7 @@ final class MoneyViewModel {
         modelContext.delete(session)
         try? modelContext.save()
         workSessions.removeAll { $0.id == session.id }
+        allWorkSessions.removeAll { $0.id == session.id }
     }
 
     func deleteSavingsEntry(_ entry: SavingsEntry, modelContext: ModelContext) {
@@ -315,6 +360,9 @@ final class MoneyViewModel {
     func deleteSavingsGoal(_ goal: SavingsGoal, modelContext: ModelContext) {
         for entry in savingsEntries where entry.goalId == goal.id {
             entry.goalId = nil
+        }
+        for session in allWorkSessions where session.savingsGoalId == goal.id {
+            session.savingsGoalId = nil
         }
         modelContext.delete(goal)
         try? modelContext.save()
@@ -348,6 +396,14 @@ final class MoneyViewModel {
 
     func displayAmount(for session: WorkSession) -> Double {
         workDisplayAmounts[session.id] ?? session.totalEarned
+    }
+
+    func displayWorkSpendableAmount(for session: WorkSession) -> Double {
+        workSpendableDisplayAmounts[session.id] ?? session.spendableWorkAmount
+    }
+
+    func displayWorkSavingsAmount(for session: WorkSession) -> Double {
+        workSavingsDisplayAmounts[session.id] ?? session.savingsWorkAmount
     }
 
     func sessionHasEnded(_ session: WorkSession) -> Bool {
@@ -431,15 +487,23 @@ final class MoneyViewModel {
     }
 
     func allocatedAmount(for goal: SavingsGoal) -> Double {
-        savingsEntries
+        let directSavings = savingsEntries
             .filter { $0.goalId == goal.id }
             .reduce(0) { $0 + displayAmount(for: $1) }
+        let workSavings = allWorkSessions
+            .filter { $0.savingsGoalId == goal.id && sessionHasEnded($0) }
+            .reduce(0) { $0 + displayWorkSavingsAmount(for: $1) }
+        return directSavings + workSavings
     }
 
     func primaryAllocatedAmount(for goal: SavingsGoal) -> Double {
-        savingsEntries
+        let directSavings = savingsEntries
             .filter { $0.goalId == goal.id }
             .reduce(0) { $0 + (savingsPrimaryDisplayAmounts[$1.id] ?? primarySavingsFallbackAmount(for: $1)) }
+        let workSavings = allWorkSessions
+            .filter { $0.savingsGoalId == goal.id && sessionHasEnded($0) }
+            .reduce(0) { $0 + (workSavingsPrimaryDisplayAmounts[$1.id] ?? $1.savingsWorkAmount) }
+        return directSavings + workSavings
     }
 
     func remainingAmount(for goal: SavingsGoal) -> Double {
@@ -464,6 +528,15 @@ final class MoneyViewModel {
     func workRateLabel(for session: WorkSession) -> String {
         let rate = formatCurrency(session.hourlyRate, currency: session.currencyCode ?? currencyCode)
         return session.usesDailyPricing ? "\(rate)/day" : "\(rate)/h"
+    }
+
+    func workSavingsDestinationLabel(for session: WorkSession) -> String {
+        guard session.savingsWorkAmount > 0 else { return "No savings split" }
+        if let goalId = session.savingsGoalId,
+           let goal = savingsGoals.first(where: { $0.id == goalId }) {
+            return goal.name
+        }
+        return "Unassigned Savings"
     }
 
     private func convertedAmount(_ amount: Double, from sourceCurrency: String?, fallbackCurrency: String) async -> Double {
@@ -508,6 +581,15 @@ final class MoneyViewModel {
         return currencyConverter.normalizedCurrencyCode(entry.originalCurrencyCode)
             ?? currencyConverter.normalizedCurrencyCode(entry.currencyCode)
             ?? currencyCode
+    }
+
+    private func primaryWorkSavingsCurrency(for session: WorkSession) -> String {
+        if let goalId = session.savingsGoalId,
+           let goal = savingsGoals.first(where: { $0.id == goalId }),
+           let goalCurrency = currencyConverter.normalizedCurrencyCode(goal.currencyCode) {
+            return goalCurrency
+        }
+        return currencyConverter.normalizedCurrencyCode(session.currencyCode) ?? currencyCode
     }
 
     private func primarySavingsFallbackAmount(for entry: SavingsEntry) -> Double {

@@ -20,8 +20,11 @@ struct WeatherView: View {
         }
         .onChange(of: viewModel.locationAuthorizationStatus) { _, status in
             if status == .authorizedWhenInUse || status == .authorizedAlways {
-                Task { await viewModel.fetchWeather(modelContext: modelContext) }
+                viewModel.requestLocation()
             }
+        }
+        .onChange(of: viewModel.locationUpdateToken) { _, _ in
+            Task { await viewModel.fetchWeather(modelContext: modelContext) }
         }
         .refreshable {
             await viewModel.fetchWeather(modelContext: modelContext)

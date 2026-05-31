@@ -19,6 +19,8 @@ struct SettingsView: View {
 
             languageSection
 
+            appearanceSection
+
             preferencesSection
 
             currencySection
@@ -60,7 +62,7 @@ struct SettingsView: View {
             HStack {
                 Text("Provider")
                 Spacer()
-                Text(providerDisplayName(viewModel.aiProviderKind))
+                Text(LocalizedStringKey(providerDisplayName(viewModel.aiProviderKind)))
                     .foregroundStyle(.secondary)
             }
             HStack {
@@ -133,6 +135,27 @@ struct SettingsView: View {
         }
     }
 
+    private var appearanceSection: some View {
+        Section {
+            Picker("Theme", selection: $viewModel.appearanceMode) {
+                Text("System").tag("system")
+                Text("Light").tag("light")
+                Text("Dark").tag("dark")
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: viewModel.appearanceMode) { _, _ in
+                viewModel.saveSettings(modelContext: modelContext)
+            }
+        } header: {
+            Text("Appearance")
+                .font(.footnote)
+                .textCase(.uppercase)
+                .foregroundColor(.secondary)
+        } footer: {
+            Text("Theme changes are applied across the app immediately.")
+        }
+    }
+
     private var preferencesSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
@@ -152,7 +175,7 @@ struct SettingsView: View {
                             HStack(spacing: 6) {
                                 Image(systemName: activity.icon)
                                     .font(.caption)
-                                Text(activity.label)
+                                Text(LocalizedStringKey(activity.label))
                                     .font(.caption)
                                 Spacer()
                                 if viewModel.selectedActivities.contains(activity.id) {
@@ -207,7 +230,7 @@ struct SettingsView: View {
 
             Picker("Budget Preference", selection: $viewModel.budgetPreference) {
                 ForEach(viewModel.budgetOptions, id: \.self) { option in
-                    Text(option.capitalized).tag(option)
+                    Text(budgetOptionTitle(option)).tag(option)
                 }
             }
         } header: {
@@ -312,7 +335,7 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func privacyPoint(icon: String, title: String, description: String) -> some View {
+    private func privacyPoint(icon: String, title: LocalizedStringKey, description: LocalizedStringKey) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Label(title, systemImage: icon)
                 .font(.headline)
@@ -345,6 +368,15 @@ struct SettingsView: View {
         case "mistral": return "Mistral AI"
         case "custom": return "Custom"
         default: return kind.capitalized
+        }
+    }
+
+    private func budgetOptionTitle(_ option: String) -> LocalizedStringKey {
+        switch option {
+        case "low": return "Low"
+        case "medium": return "Medium"
+        case "high": return "High"
+        default: return "Medium"
         }
     }
 }

@@ -10,8 +10,6 @@ struct TodayView: View {
     @State private var viewModel = TodayViewModel()
     @State private var showAddEvent = false
     @State private var isRefreshing = false
-    @State private var weatherFetched = false
-    @State private var lastWeatherFetch: Date = .distantPast
     @State private var selectedSuggestion: ActivitySuggestion?
     @State private var suggestionPreferenceText: String = ""
     @State private var showAllSuggestions = false
@@ -92,14 +90,14 @@ struct TodayView: View {
         .task {
             await viewModel.loadDay(modelContext: modelContext)
         }
+        .onChange(of: weatherService.currentSnapshot?.fetchedAt) { _, _ in
+            Task {
+                await viewModel.loadDay(modelContext: modelContext)
+            }
+        }
         .onChange(of: locationService.currentCoordinate) { _, coord in
             guard let coord = coord else { return }
-            let now = Date()
-            guard now.timeIntervalSince(lastWeatherFetch) > 900 else { return }
             Task {
-                let settings = UserSettings.current(in: modelContext)
-                _ = try? await weatherService.fetchWeather(for: coord, jwt: settings.weatherKitJWT, context: modelContext)
-                lastWeatherFetch = Date()
                 await viewModel.loadDay(modelContext: modelContext)
             }
         }
@@ -555,7 +553,7 @@ struct TodayView: View {
                 .lineLimit(2)
 
             if let category = suggestion.category {
-                Text(category.capitalized)
+                Text(LocalizedStringKey(category.capitalized))
                     .font(.caption.weight(.medium))
                     .foregroundColor(.white)
                     .padding(.horizontal, 8)
@@ -656,7 +654,7 @@ struct TodayView: View {
                             .font(.largeTitle.weight(.bold))
 
                         if let category = suggestion.category {
-                            Text(category.capitalized)
+                            Text(LocalizedStringKey(category.capitalized))
                                 .font(.caption.weight(.semibold))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 12)

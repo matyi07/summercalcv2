@@ -66,7 +66,7 @@ final class GooglePlacesProvider: PlacesProvider {
             let rating = place["rating"] as? Double
             let vicinity = place["vicinity"] as? String
             let types = place["types"] as? [String] ?? []
-            let category = types.first
+            let category = meaningfulCategory(from: types)
             let photoReference = (place["photos"] as? [[String: Any]])?.first?["photo_reference"] as? String
             let placeLoc = CLLocation(latitude: lat, longitude: lng)
 
@@ -84,6 +84,11 @@ final class GooglePlacesProvider: PlacesProvider {
                 vicinity: vicinity
             )
         }.sorted { ($0.distanceMeters ?? .infinity) < ($1.distanceMeters ?? .infinity) }
+    }
+
+    private func meaningfulCategory(from types: [String]) -> String? {
+        let genericTypes: Set<String> = ["point_of_interest", "establishment"]
+        return types.first { !genericTypes.contains($0) } ?? types.first
     }
 
     func details(placeId: String) async throws -> PlaceDetails {

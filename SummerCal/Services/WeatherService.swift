@@ -106,7 +106,7 @@ final class WeatherService: ObservableObject {
     func fetchWeather(for coordinate: Coordinate, jwt: String?, context: ModelContext) async throws -> (current: WeatherSnapshot, hourly: [WeatherSnapshot], daily: [WeatherSnapshot]) {
         let key = resolveAPIKey()
         async let current = fetchCurrentWeather(coordinate: coordinate)
-        async let forecastResult = fetchForecast(coordinate: coordinate, key: key, context: context)
+        async let forecastResult = fetchForecast(coordinate: coordinate, key: key)
 
         let currentSnapshot = try await current
         let (hourly, daily) = try await forecastResult
@@ -125,6 +125,7 @@ final class WeatherService: ObservableObject {
             }
         }
 
+        pruneStoredWeatherSnapshots(in: context)
         context.insert(currentSnapshot)
         for h in hourly { context.insert(h) }
         for d in daily { context.insert(d) }
@@ -134,7 +135,7 @@ final class WeatherService: ObservableObject {
 
     // MARK: - OpenWeatherMap Forecast API
 
-    private func fetchForecast(coordinate: Coordinate, key: String, context: ModelContext) async throws -> (hourly: [WeatherSnapshot], daily: [WeatherSnapshot]) {
+    private func fetchForecast(coordinate: Coordinate, key: String) async throws -> (hourly: [WeatherSnapshot], daily: [WeatherSnapshot]) {
         let urlString = "https://api.openweathermap.org/data/2.5/forecast?lat=\(coordinate.latitude)&lon=\(coordinate.longitude)&units=metric&cnt=40&appid=\(key)"
         guard let url = URL(string: urlString) else {
             throw NSError(domain: "WeatherService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid OWM forecast URL"])
@@ -189,7 +190,6 @@ final class WeatherService: ObservableObject {
                 feelsLikeCelsius: feelsLike,
                 cloudCover: cloudCover
             )
-            context.insert(snapshot)
             hourlySnapshots.append(snapshot)
         }
 
@@ -231,11 +231,18 @@ final class WeatherService: ObservableObject {
                 lowTemp: minT,
                 cloudCover: maxCloud
             )
-            context.insert(daily)
             dailySnapshots.append(daily)
         }
 
         return (hourlySnapshots, dailySnapshots)
+    }
+
+    private func pruneStoredWeatherSnapshots(in context: ModelContext) {
+        let descriptor = FetchDescriptor<WeatherSnapshot>()
+        let existing = (try? context.fetch(descriptor)) ?? []
+        for snapshot in existing {
+            context.delete(snapshot)
+        }
     }
 
     // MARK: - Air Pollution

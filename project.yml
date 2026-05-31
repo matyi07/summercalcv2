@@ -52,7 +52,6 @@ targets:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        UIUserInterfaceStyle: Light
         NSLocationWhenInUseUsageDescription: "SummerCal uses your location to show local weather and nearby places. You can disable this anytime."
         NSLocationAlwaysAndWhenInUseUsageDescription: "SummerCal uses your location for weather alerts and place suggestions."
         NSCameraUsageDescription: "SummerCal uses the camera to capture receipt photos for expense tracking."
@@ -66,6 +65,7 @@ targets:
       path: SummerCal/SummerCal.entitlements
       properties:
         com.apple.developer.weatherkit: true
+        com.apple.developer.usernotifications.time-sensitive: true
         com.apple.security.application-groups:
           - group.com.summercal.v2
 

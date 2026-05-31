@@ -4,13 +4,26 @@ import SwiftData
 struct ContentView: View {
     @EnvironmentObject private var router: AppRouter
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @State private var locationService = LocationService()
     @State private var weatherService = WeatherService()
+    @State private var lastWeatherRefresh: Date = .distantPast
+    @State private var weatherRefreshInFlight = false
     @Query(sort: \UserSettings.createdAt) private var settings: [UserSettings]
+
+    private let weatherRefreshTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
 
     private var appLocale: Locale {
         let code = settings.first?.languageCode ?? "en"
         return Locale(identifier: code == "hu" ? "hu_HU" : "en_US")
+    }
+
+    private var preferredColorScheme: ColorScheme? {
+        switch settings.first?.appearanceMode ?? "system" {
+        case "dark": return .dark
+        case "light": return .light
+        default: return nil
+        }
     }
 
     var body: some View {
@@ -58,6 +71,7 @@ struct ContentView: View {
             }
             .tint(.orange)
             .environment(\.locale, appLocale)
+            .preferredColorScheme(preferredColorScheme)
             .environmentObject(locationService)
             .environmentObject(weatherService)
             .sheet(item: $router.presentedSheet) { sheet in
@@ -66,8 +80,27 @@ struct ContentView: View {
         }
         .task {
             locationService.requestWhenInUsePermission()
+            locationService.requestLocation()
             WidgetDataService.refreshTodayEvents(modelContext: modelContext)
+            await refreshWeatherIfNeeded(force: true)
             await NotificationBootstrapService().refresh(modelContext: modelContext)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            locationService.requestLocation()
+            Task {
+                await refreshWeatherIfNeeded(force: true)
+            }
+        }
+        .onChange(of: locationService.currentCoordinate) { _, _ in
+            Task {
+                await refreshWeatherIfNeeded(force: true)
+            }
+        }
+        .onReceive(weatherRefreshTimer) { _ in
+            Task {
+                await refreshWeatherIfNeeded(force: false)
+            }
         }
         .onOpenURL { url in
             handleDeepLink(url)
@@ -114,6 +147,31 @@ struct ContentView: View {
                 .contains(where: { $0.name == "camera" && $0.value == "1" }) ?? false
             router.selectedTab = .money
             router.showSheet(.addExpense(openCamera: shouldOpenCamera))
+        }
+    }
+
+    @MainActor
+    private func refreshWeatherIfNeeded(force: Bool) async {
+        guard let coordinate = locationService.currentCoordinate else { return }
+        guard !weatherRefreshInFlight else { return }
+
+        let now = Date()
+        guard force || now.timeIntervalSince(lastWeatherRefresh) >= 300 else { return }
+
+        weatherRefreshInFlight = true
+        defer { weatherRefreshInFlight = false }
+
+        let settings = UserSettings.current(in: modelContext)
+        do {
+            _ = try await weatherService.fetchWeather(
+                for: coordinate,
+                jwt: settings.weatherKitJWT,
+                context: modelContext
+            )
+            try? modelContext.save()
+            lastWeatherRefresh = Date()
+        } catch {
+            weatherService.error = error.localizedDescription
         }
     }
 }

@@ -4,6 +4,7 @@ import SwiftData
 struct CalendarView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appRouter: AppRouter
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @State private var viewModel = CalendarViewModel()
     @State private var showAddEvent = false
@@ -14,6 +15,7 @@ struct CalendarView: View {
     @Query(sort: \WorkSession.date) private var workSessions: [WorkSession]
 
     private let columns = Array(repeating: GridItem(.flexible()), count: 7)
+    private var isLandscapeLayout: Bool { verticalSizeClass == .compact }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,8 +58,12 @@ struct CalendarView: View {
             }
         }
         .onAppear {
+            applyOrientationEventScope()
             viewModel.refreshEvents(with: events)
             viewModel.refreshWorkSessions(with: workSessions)
+        }
+        .onChange(of: verticalSizeClass) { _, _ in
+            applyOrientationEventScope()
         }
         .onChange(of: events) { _, newEvents in
             viewModel.refreshEvents(with: newEvents)
@@ -277,6 +283,11 @@ struct CalendarView: View {
 
     private var displayedEvents: [CalendarEvent] {
         showWholeMonth ? viewModel.eventsInCurrentMonth : viewModel.eventsOnSelectedDay
+    }
+
+    private func applyOrientationEventScope() {
+        guard isLandscapeLayout else { return }
+        showWholeMonth = true
     }
 
     private var selectedDayLabel: String {

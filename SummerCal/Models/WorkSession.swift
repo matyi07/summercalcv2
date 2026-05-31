@@ -11,6 +11,8 @@ final class WorkSession {
     var totalEarned: Double
     var currencyCode: String?
     var pricingMode: String?
+    var spendableAmount: Double?
+    var savingsGoalId: UUID?
     var calendarEventId: UUID?
     var workTypeId: UUID?
     var workTypeName: String?
@@ -26,6 +28,8 @@ final class WorkSession {
         totalEarned: Double = 0,
         currencyCode: String? = nil,
         pricingMode: String? = "hourly",
+        spendableAmount: Double? = nil,
+        savingsGoalId: UUID? = nil,
         calendarEventId: UUID? = nil,
         workTypeId: UUID? = nil,
         workTypeName: String? = nil,
@@ -40,6 +44,8 @@ final class WorkSession {
         self.totalEarned = totalEarned
         self.currencyCode = currencyCode
         self.pricingMode = pricingMode
+        self.spendableAmount = spendableAmount
+        self.savingsGoalId = savingsGoalId
         self.calendarEventId = calendarEventId
         self.workTypeId = workTypeId
         self.workTypeName = workTypeName
@@ -49,5 +55,14 @@ final class WorkSession {
 
     var usesDailyPricing: Bool {
         pricingMode == "daily"
+    }
+
+    var spendableWorkAmount: Double {
+        let requested = spendableAmount ?? totalEarned
+        return min(max(requested, 0), max(totalEarned, 0))
+    }
+
+    var savingsWorkAmount: Double {
+        max(totalEarned - spendableWorkAmount, 0)
     }
 }

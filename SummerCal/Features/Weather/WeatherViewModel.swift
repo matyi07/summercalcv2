@@ -11,6 +11,7 @@ final class WeatherViewModel: NSObject, CLLocationManagerDelegate {
     var errorMessage: String?
     var locationName: String?
     var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
+    var locationUpdateToken = UUID()
     var lastUpdated: Date?
     var weatherSource: String { weatherService.lastSource }
 
@@ -32,7 +33,13 @@ final class WeatherViewModel: NSObject, CLLocationManagerDelegate {
     }
 
     func requestLocation() {
-        locationManager.requestWhenInUseAuthorization()
+        locationAuthorizationStatus = locationManager.authorizationStatus
+        switch locationManager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            locationManager.requestLocation()
+        default:
+            locationManager.requestWhenInUseAuthorization()
+        }
     }
 
     func loadThresholds(modelContext: ModelContext) {
@@ -217,7 +224,7 @@ final class WeatherViewModel: NSObject, CLLocationManagerDelegate {
         locationAuthorizationStatus = manager.authorizationStatus
         switch manager.authorizationStatus {
         case .authorizedWhenInUse, .authorizedAlways:
-            manager.startUpdatingLocation()
+            manager.requestLocation()
         case .denied, .restricted:
             locationName = nil
             currentCoordinate = nil
@@ -229,8 +236,8 @@ final class WeatherViewModel: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         currentCoordinate = location.coordinate
+        locationUpdateToken = UUID()
         // Don't stop — allow continuous tracking for when user moves
-        manager.stopUpdatingLocation()
 
         let geocoder = CLGeocoder()
         geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, _ in

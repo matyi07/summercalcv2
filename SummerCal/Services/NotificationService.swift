@@ -22,7 +22,7 @@ final class NotificationService {
 
     func requestPermission() async -> Bool {
         do {
-            return try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+            return try await UNUserNotificationCenter.current().requestAuthorization(options: authorizationOptions())
         } catch { return false }
     }
 
@@ -34,6 +34,7 @@ final class NotificationService {
         let content = UNMutableNotificationContent()
         content.title = event.title
         content.sound = .default
+        configureTimeSensitive(content)
 
         let requestedTriggerDate = event.startDate.addingTimeInterval(-Double(minutesBefore * 60))
         let minimumFutureDate = Date().addingTimeInterval(5)
@@ -81,6 +82,7 @@ final class NotificationService {
         let content = UNMutableNotificationContent()
         content.title = event.title
         content.sound = .default
+        configureTimeSensitive(content)
 
         let eventFormatter = DateFormatter()
         eventFormatter.dateStyle = .medium
@@ -137,6 +139,7 @@ final class NotificationService {
         content.title = title
         content.body = body
         content.sound = .default
+        configureTimeSensitive(content)
         content.categoryIdentifier = categoryIdentifier ?? ""
 
         let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
@@ -213,6 +216,20 @@ final class NotificationService {
             return false
         @unknown default:
             return false
+        }
+    }
+
+    private func authorizationOptions() -> UNAuthorizationOptions {
+        var options: UNAuthorizationOptions = [.alert, .sound, .badge]
+        if #available(iOS 15.0, *) {
+            options.insert(.timeSensitive)
+        }
+        return options
+    }
+
+    private func configureTimeSensitive(_ content: UNMutableNotificationContent) {
+        if #available(iOS 15.0, *) {
+            content.interruptionLevel = .timeSensitive
         }
     }
 }

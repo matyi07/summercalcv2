@@ -52,6 +52,44 @@ enum PlaceCategory: String, CaseIterable, Identifiable {
         case .errand: return "errand"
         }
     }
+
+    func matches(_ place: PlaceCandidate) -> Bool {
+        guard self != .all else { return true }
+
+        let searchable = [
+            place.category,
+            place.name,
+            place.address,
+            place.vicinity
+        ]
+        .compactMap { $0?.lowercased() }
+        .joined(separator: " ")
+
+        switch self {
+        case .all:
+            return true
+        case .cafe:
+            return searchable.contains("cafe") || searchable.contains("coffee")
+        case .gym:
+            return searchable.contains("gym") || searchable.contains("fitness")
+        case .restaurant:
+            return searchable.contains("restaurant") || searchable.contains("meal") || searchable.contains("food")
+        case .park:
+            return searchable.contains("park")
+        case .museum:
+            return searchable.contains("museum") || searchable.contains("gallery")
+        case .shop:
+            return searchable.contains("shop") || searchable.contains("store") || searchable.contains("mall")
+        case .errand:
+            return searchable.contains("errand") ||
+                searchable.contains("bank") ||
+                searchable.contains("pharmacy") ||
+                searchable.contains("post_office") ||
+                searchable.contains("laundry") ||
+                searchable.contains("gas_station") ||
+                searchable.contains("local_government_office")
+        }
+    }
 }
 
 @Observable
@@ -139,7 +177,7 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
 
         if selectedCategory != .all, let keyword = selectedCategory.searchKeyword {
             filtered = filtered.filter {
-                $0.category?.lowercased().contains(keyword) ?? false
+                selectedCategory.matches($0) || ($0.category?.lowercased().contains(keyword) ?? false)
             }
         }
 
@@ -156,9 +194,10 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
         isLoading = true
         errorMessage = nil
 
-        var keyword = selectedCategory == .all ? "point of interest" : (selectedCategory.searchKeyword ?? "point of interest")
+        let categoryKeyword = selectedCategory == .all ? "point of interest" : (selectedCategory.searchKeyword ?? "point of interest")
+        var keyword = categoryKeyword
         if !searchText.isEmpty {
-            keyword = searchText
+            keyword = selectedCategory == .all ? searchText : "\(searchText) \(categoryKeyword)"
         }
 
         let coord = Coordinate(latitude: coordinate.latitude, longitude: coordinate.longitude)
@@ -176,9 +215,8 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
             if service.error != nil {
                 errorMessage = service.error
             }
-            var fetched = service.results
+            let fetched = filteredForCurrentSelection(service.results)
             if fetched.isEmpty && !searchText.isEmpty {
-                // No results, keep showing saved places
                 applyFilters()
                 isLoading = false
                 return
@@ -191,15 +229,8 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
             }
             try? modelContext.save()
 
-            // Merge with saved places for this query
-            var results = fetched
-            for saved in savedPlaces {
-                if !results.contains(where: { $0.placeId == saved.placeId && saved.placeId != nil }) {
-                    results.append(saved)
-                }
-            }
-            placeResults = results
-            savedPlaces = results
+            savedPlaces = mergedUniquePlaces(fetched + savedPlaces)
+            applyFilters()
             isLoading = false
         }
     }
@@ -229,6 +260,37 @@ final class PlacesViewModel: NSObject, CLLocationManagerDelegate {
         if cat.contains("shop") || cat.contains("store") { return "bag.fill" }
         if cat.contains("hotel") || cat.contains("lodging") { return "bed.double.fill" }
         return "mappin"
+    }
+
+    private func filteredForCurrentSelection(_ places: [PlaceCandidate]) -> [PlaceCandidate] {
+        var filtered = places
+        if selectedCategory != .all {
+            filtered = filtered.filter { selectedCategory.matches($0) }
+        }
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            filtered = filtered.filter {
+                $0.name.lowercased().contains(query) ||
+                ($0.address?.lowercased().contains(query) ?? false) ||
+                ($0.category?.lowercased().contains(query) ?? false) ||
+                ($0.vicinity?.lowercased().contains(query) ?? false)
+            }
+        }
+        return filtered
+    }
+
+    private func mergedUniquePlaces(_ places: [PlaceCandidate]) -> [PlaceCandidate] {
+        var seen = Set<String>()
+        var merged: [PlaceCandidate] = []
+
+        for place in places {
+            let key = place.placeId ?? "\(place.name.lowercased())|\(place.latitude)|\(place.longitude)"
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            merged.append(place)
+        }
+
+        return merged
     }
 
     // MARK: - CLLocationManagerDelegate

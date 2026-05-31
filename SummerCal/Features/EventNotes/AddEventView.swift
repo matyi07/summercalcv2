@@ -28,10 +28,13 @@ struct AddEventView: View {
     @State private var hasCustomReminderDate: Bool = false
     @State private var customReminderDate: Date = Date().addingTimeInterval(30 * 60)
     @State private var selectedWorkTypeId: UUID?
+    @State private var selectedWorkVariantId: UUID?
     @State private var workTypeName: String = ""
     @State private var workRateText: String = ""
     @State private var workPricingMode: String = "hourly"
     @State private var workCurrencyCode: String = ""
+    @State private var lastAutoFilledWorkTitle: String?
+    @State private var lastAutoFilledWorkLocation: String?
     @State private var showPermissionAlert: Bool = false
     @State private var saveError: String?
 
@@ -106,6 +109,7 @@ struct AddEventView: View {
                             if endDate < startDate {
                                 endDate = startDate.addingTimeInterval(3600)
                             }
+                            autofillWorkTitleIfNeeded(workTypeName)
                         }
                     }
 
@@ -121,11 +125,19 @@ struct AddEventView: View {
                         rateText: $workRateText,
                         pricingMode: $workPricingMode,
                         currencyCode: $workCurrencyCode,
+                        selectedWorkVariantId: $selectedWorkVariantId,
+                        locationName: $location,
                         defaultCurrency: defaultCurrency,
                         workStartTime: $startDate,
                         workEndTime: $endDate,
-                        showsWorkHours: true
+                        showsWorkHours: true,
+                        onWorkTypeApplied: { type in
+                            applyWorkTypeDefaults(type)
+                        }
                     )
+                    .onChange(of: workTypeName) { _, newName in
+                        autofillWorkTitleIfNeeded(newName)
+                    }
                 }
 
                 Section("Notes") {
@@ -224,6 +236,7 @@ struct AddEventView: View {
                     isOutdoor = event.isOutdoor
                     selectedWorkTypeId = event.workTypeId
                     workTypeName = event.workTypeName ?? ""
+                    lastAutoFilledWorkTitle = event.workTypeName
                     if let rate = event.workRateAmount {
                         workRateText = String(format: "%.2f", rate).replacingOccurrences(of: ".", with: decimalSeparator())
                     }
@@ -307,7 +320,7 @@ struct AddEventView: View {
             if settings.authorizationStatus == .denied {
                 await MainActor.run { showPermissionAlert = true }
             } else if settings.authorizationStatus == .notDetermined {
-                let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+                let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: notificationAuthorizationOptions())) ?? false
                 if !granted {
                     await MainActor.run {
                         notificationEnabled = false
@@ -448,6 +461,8 @@ struct AddEventView: View {
             type.rateAmount = workRateAmount
             type.pricingMode = workPricingMode
             type.currencyCode = targetCurrency
+            type.locationName = cleanedLocationName()
+            type.defaultVariantId = selectedWorkVariantId
             persistWorkHours(on: type)
             type.updatedAt = Date()
             selectedWorkTypeId = type.id
@@ -456,7 +471,9 @@ struct AddEventView: View {
                 name: cleanedName,
                 rateAmount: workRateAmount,
                 pricingMode: workPricingMode,
-                currencyCode: targetCurrency
+                currencyCode: targetCurrency,
+                locationName: cleanedLocationName(),
+                defaultVariantId: selectedWorkVariantId
             )
             persistWorkHours(on: type)
             modelContext.insert(type)
@@ -525,6 +542,14 @@ struct AddEventView: View {
         return max(soon, start.addingTimeInterval(-30 * 60))
     }
 
+    private func notificationAuthorizationOptions() -> UNAuthorizationOptions {
+        var options: UNAuthorizationOptions = [.alert, .sound, .badge]
+        if #available(iOS 15.0, *) {
+            options.insert(.timeSensitive)
+        }
+        return options
+    }
+
     private func iconForCategory(_ category: String) -> String {
         switch category {
         case "work": return "briefcase"
@@ -567,6 +592,49 @@ struct AddEventView: View {
                 }
             }
         )
+    }
+
+    private func applyWorkTypeDefaults(_ type: WorkType) {
+        let shouldForce = existingEvent == nil
+        autofillWorkTitle(type.name, force: shouldForce)
+        guard let locationName = type.locationName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !locationName.isEmpty else {
+            return
+        }
+        autofillWorkLocation(locationName, force: shouldForce)
+    }
+
+    private func autofillWorkTitleIfNeeded(_ value: String) {
+        let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isWorkEvent, !cleaned.isEmpty else { return }
+        autofillWorkTitle(cleaned, force: false)
+    }
+
+    private func autofillWorkTitle(_ value: String, force: Bool) {
+        let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+
+        let current = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if force || current.isEmpty || current == lastAutoFilledWorkTitle {
+            title = cleaned
+            lastAutoFilledWorkTitle = cleaned
+        }
+    }
+
+    private func autofillWorkLocation(_ value: String, force: Bool) {
+        let cleaned = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+
+        let current = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        if force || current.isEmpty || current == lastAutoFilledWorkLocation {
+            location = cleaned
+            lastAutoFilledWorkLocation = cleaned
+        }
+    }
+
+    private func cleanedLocationName() -> String? {
+        let cleaned = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? nil : cleaned
     }
 
     private func persistWorkHours(on type: WorkType) {
